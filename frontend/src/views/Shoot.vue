@@ -5,7 +5,7 @@ import { closeToast, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
 import { compressImage } from '../utils/image'
 import { getKeys } from '../store/keys'
-import { loadDraft } from '../store/chat'
+import { latestDraft, newSessionId } from '../store/chat'
 import { session } from '../store/session'
 
 const router = useRouter()
@@ -21,20 +21,27 @@ const previewBlob = ref(null) // 待识别图（已压缩，可能已被圈选�
 // 未配 Key 引导（3.6 纯 BYOK）：识别必须有智谱 Key
 const needKey = ref(false)
 
-// 草稿续聊入口（FR-12）：有未完成对话时拍题页显示横幅
+// 草稿续聊入口（FR-12）：有未完成对话时拍题页显示横幅，指向最近更新的会话桶
 const hasDraft = ref(false)
 const draftPreview = ref('')
+const draftSid = ref('')
 
 onMounted(() => {
   window.addEventListener('paste', onPaste)
   needKey.value = !getKeys().zhipu
-  const d = loadDraft()
+  const d = latestDraft()
   if (d?.question?.questionText) {
     hasDraft.value = true
     draftPreview.value = d.question.questionText.slice(0, 40)
+    draftSid.value = d.sid
   }
 })
 onUnmounted(() => window.removeEventListener('paste', onPaste))
+
+// 继续上次对话：带会话桶 id 进入，恢复对应题的对话（多个桶时横幅指向最近更新的）
+function goDraft() {
+  router.push({ name: 'chat', query: { sid: draftSid.value } })
+}
 
 function pick(type) {
   const map = { camera: cameraInput, album: albumInput, desktop: desktopInput }
@@ -90,6 +97,7 @@ async function startRecognize() {
     const data = await recognizeImage(previewBlob.value)
     Object.assign(session, {
       imageDataUrl: previewUrl.value,
+      sessionId: newSessionId(), // 拍新题 = 新会话桶 id，绝不覆盖其他题的对话
       subject: data.subject,
       questionText: data.question_text,
       studentWork: data.student_work,
@@ -208,8 +216,8 @@ function confirmCrop() {
         <van-icon name="setting-o" />
       </button>
 
-      <!-- 继续上次对话（FR-12 草稿续聊入口，M3 并入错题本） -->
-      <button v-if="hasDraft && !previewUrl" class="draft-banner" @click="router.push('/chat')">
+      <!-- 继续上次对话（FR-12 草稿续聊入口）：按 sessionId 恢复最近未完成会话 -->
+      <button v-if="hasDraft && !previewUrl" class="draft-banner" @click="goDraft">
         <span class="draft-title">继续上次对话</span>
         <span class="draft-preview">{{ draftPreview }}</span>
         <van-icon name="arrow" />

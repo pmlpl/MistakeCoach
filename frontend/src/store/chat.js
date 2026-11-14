@@ -14,38 +14,93 @@ export const chat = reactive({
 const STUCK_RE = /(不知道|不会|没思路|不清楚|不晓得|想不出|看不懂)/
 const DIRECT_RE = /(直接讲|直接给|给我答案|告诉我答案|不会了|说答案)/
 
-const DRAFT_KEY = 'mc_chat_draft'
+const DRAFT_KEY = 'mc_chat_draft' // 存 { v: 2, buckets: { [sessionId]: 会话桶 } }
+const LAST_SID_KEY = 'mc_chat_last_sid' // 最近活跃会话 id：刷新后无 sid 进入时恢复它
+const MAX_BUCKETS = 10 // 防长用撑爆 localStorage：只保留最近 10 个未完成会话桶
 
-/** 草稿续聊（FR-12）：只存真实对话与题目字段，notice 气泡不入档 */
-export function saveDraft() {
-  const messages = chat.messages.filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
-  if (!messages.length) return
-  localStorage.setItem(
-    DRAFT_KEY,
-    JSON.stringify({
-      question: {
-        subject: session.subject,
-        gradeBand: session.gradeBand,
-        questionText: session.questionText,
-        studentWork: session.studentWork,
-        hasHandwriting: session.hasHandwriting,
-      },
-      messages,
-      state: { ...chat.state },
-    }),
-  )
+/** 每道题一个会话桶 id：拍题识别成功时分配（Shoot.vue），拍新题绝不触碰其他桶 */
+export function newSessionId() {
+  return 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
-export function loadDraft() {
+/** 读全部分桶；兼容旧版单份草稿——读到旧结构时一次性迁移为 legacy 桶并回写，老用户未完成对话不丢 */
+function readBuckets() {
   try {
-    return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
+    const raw = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
+    if (!raw) return {}
+    if (raw.v === 2 && raw.buckets && typeof raw.buckets === 'object') return raw.buckets
+    if (raw.question && Array.isArray(raw.messages)) {
+      const buckets = { legacy: raw }
+      writeBuckets(buckets)
+      localStorage.setItem(LAST_SID_KEY, 'legacy')
+      return buckets
+    }
+    return {}
   } catch {
-    return null
+    return {}
   }
 }
 
-export function clearDraft() {
-  localStorage.removeItem(DRAFT_KEY)
+function writeBuckets(buckets) {
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: 2, buckets }))
+}
+
+/** 草稿续聊（FR-12）：当前对话存入 session.sessionId 对应的桶；notice 气泡不入档 */
+export function saveDraft() {
+  const sid = session.sessionId
+  const messages = chat.messages.filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
+  if (!sid || !messages.length) return
+  const buckets = readBuckets()
+  buckets[sid] = {
+    question: {
+      subject: session.subject,
+      gradeBand: session.gradeBand,
+      questionText: session.questionText,
+      studentWork: session.studentWork,
+      hasHandwriting: session.hasHandwriting,
+    },
+    messages,
+    state: { ...chat.state },
+    updatedAt: Date.now(), // 多桶并存时「继续上次对话」取最近更新的桶
+  }
+  // 超限裁剪最旧的桶（当前桶 updatedAt 最新，不会被裁掉）
+  const keys = Object.keys(buckets)
+  if (keys.length > MAX_BUCKETS) {
+    keys.sort((a, b) => (buckets[a].updatedAt || 0) - (buckets[b].updatedAt || 0))
+    keys.slice(0, keys.length - MAX_BUCKETS).forEach((k) => delete buckets[k])
+  }
+  writeBuckets(buckets)
+  localStorage.setItem(LAST_SID_KEY, sid)
+}
+
+/** 读取指定会话桶；不传 sid 读最近活跃桶（刷新续聊）。返回值带 sid 便于回绑 session */
+export function loadDraft(sid) {
+  const key = sid || localStorage.getItem(LAST_SID_KEY)
+  if (!key) return null
+  const buckets = readBuckets()
+  return buckets[key] ? { ...buckets[key], sid: key } : null
+}
+
+/** 最近一个未完成会话桶（多个时取最近更新的）：「继续上次对话」横幅指向它 */
+export function latestDraft() {
+  const buckets = readBuckets()
+  let best = ''
+  for (const key of Object.keys(buckets)) {
+    if (!best || (buckets[key].updatedAt || 0) > (buckets[best].updatedAt || 0)) best = key
+  }
+  return best ? { ...buckets[best], sid: best } : null
+}
+
+/** 清空指定会话桶（生成错题卡成功后只清当前桶）；不传 sid 清最近活跃桶 */
+export function clearDraft(sid) {
+  const key = sid || localStorage.getItem(LAST_SID_KEY)
+  if (!key) return
+  const buckets = readBuckets()
+  if (buckets[key]) {
+    delete buckets[key]
+    writeBuckets(buckets)
+  }
+  if (localStorage.getItem(LAST_SID_KEY) === key) localStorage.removeItem(LAST_SID_KEY)
 }
 
 export function pushMessage(role, content) {

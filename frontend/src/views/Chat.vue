@@ -1,7 +1,7 @@
 <script setup>
 // M2 对话页：SSE 气泡流 + 双模式切换 + KaTeX 渲染（FR-4/5/6；7.5 三触点模式认知）
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { closeToast, showImagePreview, showLoadingToast, showToast } from 'vant'
 import { chatStream, noteGenerate } from '../api'
 import { renderMixed } from '../utils/render'
@@ -21,6 +21,7 @@ import {
 } from '../store/chat'
 
 const router = useRouter()
+const route = useRoute()
 const input = ref('')
 const listEl = ref(null)
 const showRef = ref(false) // 手机端题目参考卡展开开关（桌面端常驻，3.5）
@@ -104,7 +105,7 @@ async function onNote() {
   try {
     const card = await noteGenerate(session.questionText, session.studentWork, msgs)
     session.pendingCard = card
-    clearDraft()
+    clearDraft(session.sessionId) // 只清当前题的会话桶，其他未完成对话保留
     closeToast()
     router.push(`/card/${card.id}`)
   } catch (e) {
@@ -115,11 +116,25 @@ async function onNote() {
   }
 }
 
-// 进入页面：有草稿且非新核验 → 恢复续聊（FR-12）；否则开新对话
+// 进入页面：拍新题核验通过 → 开新会话桶对话；带 sid / 有活跃桶 → 恢复续聊（FR-12）
 onMounted(() => {
-  const draft = loadDraft()
-  if (draft && draft.messages?.length && !session.verified) {
-    // 刷新恢复：题目字段 + 消息 + 状态（原图 objectURL 已失效，不恢复）
+  // 拍新题（Shoot 识别成功分配了新 sessionId）：开全新对话，绝不读写其他题的会话桶
+  if (session.verified && session.sessionId) {
+    resetChat()
+    if (!localStorage.getItem(INTRO_SEEN_KEY)) {
+      pushMessage('notice', '引导模式：我不会直接给答案，会一步步问你，带你找到错在哪。想直接听懂？点顶栏『讲解』。')
+      localStorage.setItem(INTRO_SEEN_KEY, '1')
+    }
+    session.verified = false // 对话已开：此后进入 /chat 改由会话桶守卫（避免横幅续聊被误判为新对话）
+    requestReply()
+    return
+  }
+  // 从横幅/错题本带 sid 进入，或刷新后按最近活跃桶恢复（题目字段 + 消息 + 状态；原图 objectURL 已失效不恢复）
+  const sid = typeof route.query.sid === 'string' ? route.query.sid : ''
+  const draft = loadDraft(sid)
+  if (draft && draft.messages?.length) {
+    session.sessionId = draft.sid // 绑定桶 id：之后每轮对话存回自己的桶
+    resetChat() // 清上道题遗留的 stuck 计数与消息，再经 pushMessage 重建
     Object.assign(session, draft.question, { imageDataUrl: '' })
     // 必须经 pushMessage 重新分配自增 id——直接 push 旧 id 会与 seq 从 0 起的新消息撞车，
     // 流式增量会写进同 id 的旧消息，新气泡永远空白
@@ -127,13 +142,8 @@ onMounted(() => {
     chat.state = { ...draft.state }
     scrollToBottom()
   } else {
-    // 新对话：清旧草稿；首次插入高亮说明气泡（三触点之一）；空会话自动发起 P1 开场
-    clearDraft()
+    // 守卫已拦掉无桶进入，这里纯兜底：按新对话处理
     resetChat()
-    if (!localStorage.getItem(INTRO_SEEN_KEY)) {
-      pushMessage('notice', '引导模式：我不会直接给答案，会一步步问你，带你找到错在哪。想直接听懂？点顶栏『讲解』。')
-      localStorage.setItem(INTRO_SEEN_KEY, '1')
-    }
     requestReply()
   }
 })

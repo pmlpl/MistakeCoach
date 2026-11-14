@@ -5,7 +5,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
-import { loadDraft } from '../store/chat'
+import { latestDraft } from '../store/chat'
 import { renderMixed } from '../utils/render'
 
 const router = useRouter()
@@ -13,6 +13,7 @@ const router = useRouter()
 const cards = ref([])
 const hasDraft = ref(false)
 const draftPreview = ref('')
+const draftSid = ref('') // 未完成对话的会话桶 id：横幅按它恢复对应题的对话
 
 const DIMS = [
   { key: 'subject', label: '学科' },
@@ -34,9 +35,15 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 function load() {
   cards.value = JSON.parse(localStorage.getItem('mc_cards') || '[]')
-  const draft = loadDraft()
+  const draft = latestDraft() // 多个未完成会话时取最近更新的
   hasDraft.value = !!draft
   draftPreview.value = draft?.question?.questionText?.slice(0, 40) || ''
+  draftSid.value = draft?.sid || ''
+}
+
+// 继续未完成对话：带会话桶 id 进入，恢复对应题的对话
+function goDraft() {
+  router.push({ name: 'chat', query: { sid: draftSid.value } })
 }
 
 function dimsOf(card, dim) {
@@ -170,8 +177,8 @@ function clearAll() {
     <van-nav-bar title="错题本" fixed placeholder left-arrow @click-left="router.push('/')" />
 
     <div class="content" @click="onBackdrop">
-      <!-- 未完成对话入口（FR-12） -->
-      <button v-if="hasDraft" class="draft-banner" @click="router.push('/chat')">
+      <!-- 未完成对话入口（FR-12）：按 sessionId 恢复对应题的对话 -->
+      <button v-if="hasDraft" class="draft-banner" @click="goDraft">
         <span class="draft-title">继续上次对话</span>
         <span class="draft-preview">{{ draftPreview }}</span>
         <van-icon name="arrow" />

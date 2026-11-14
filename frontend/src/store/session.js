@@ -3,6 +3,7 @@ import { reactive } from 'vue'
 
 export const session = reactive({
   imageDataUrl: '', // 原图预览（内存 objectURL，仅核验页展示用）
+  sessionId: '', // 会话桶 id：每道题独立对话上下文，拍新题识别成功时重新生成
   subject: '其他',
   gradeBand: '初中',
   questionText: '', // 核验后的题目原文（对话/笔记一律以此为准）
@@ -15,6 +16,7 @@ export const session = reactive({
 export function resetSession() {
   Object.assign(session, {
     imageDataUrl: '',
+    sessionId: '',
     subject: '其他',
     gradeBand: '初中',
     questionText: '',

@@ -27,8 +27,8 @@ const router = createRouter({
 router.beforeEach((to) => {
   // /verify：识别数据仅在内存，刷新/直访回拍题页
   if (to.name === 'verify' && !session.imageDataUrl) return { name: 'shoot' }
-  // /chat：核验通过或有草稿即可进入（FR-12 草稿续聊；3.4）
-  if (to.name === 'chat' && !session.verified && !loadDraft()) return { name: 'shoot' }
+  // /chat：核验通过，或 URL 指定 / 最近活跃的会话桶存在即可进入（FR-12 草稿续聊；3.4）
+  if (to.name === 'chat' && !session.verified && !loadDraft(to.query.sid)) return { name: 'shoot' }
   // /card/:id：错题本查有此卡，或是刚生成待保存的新卡（M3）
   if (to.name === 'card') {
     const cards = JSON.parse(localStorage.getItem('mc_cards') || '[]')
