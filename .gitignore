@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 密钥与环境变量（绝不入库）
+backend/.env
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 编辑器与日志
+*.log
+.trae*

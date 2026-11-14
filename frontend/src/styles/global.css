@@ -1,0 +1,56 @@
+/* MistakeCoach 全局样式：手账荧光皮肤 token（3.2）+ 基础排版 + 页面切换动效 */
+:root {
+  --bg: #FFFBEB;
+  --text: #44403C;
+  --text-secondary: #A16207;
+  --border: #E7D8A8;
+  --accent: #D97706;
+  --highlight: #FEF08A;
+  --wrong: #DC2626;
+  --radius: 16px;
+
+  /* Vant 顶栏跟随皮肤 */
+  --van-nav-bar-background: #FFFBEB;
+  --van-nav-bar-title-text-color: #44403C;
+  --van-nav-bar-icon-color: #44403C;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 页面切换：主流程右滑进入、返回左滑（约 120ms）；reduced-motion 禁用（3.4） */
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.slide-enter-from {
+  transform: translateX(32px);
+  opacity: 0;
+}
+
+.slide-leave-to {
+  transform: translateX(-32px);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-enter-active,
+  .slide-leave-active {
+    transition: none;
+  }
+}
