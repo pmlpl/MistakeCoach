@@ -31,6 +31,20 @@ def health():
 
 
 # 静态托管前端构建产物（M4 部署时生效：npm run build 后 frontend/dist 出现即自动挂载）
+# SPA 回退：history 路由的子路径（/book、/settings、/card/:id）刷新时回 index.html，
+# 否则 FastAPI 找不到对应路由会返回 {"detail":"Not Found"}
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
+
 _dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(_dist):
-    app.mount("/", StaticFiles(directory=_dist, html=True), name="static")
+    app.mount("/assets", StaticFiles(directory=os.path.join(_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")  # API 路径不回退到页面
+        candidate = os.path.normpath(os.path.join(_dist, full_path))
+        if full_path and candidate.startswith(os.path.normpath(_dist)) and os.path.isfile(candidate):
+            return FileResponse(candidate)  # dist 内的真实文件（如 favicon）按原样返回
+        return FileResponse(os.path.join(_dist, "index.html"))
