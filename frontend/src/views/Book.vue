@@ -104,15 +104,32 @@ function goCard(card) {
   router.push(`/card/${card.id}`)
 }
 
-// 牌位姿：收拢=小错位叠放；推开=横向铺开（间距自适应，顶牌先动逐张错开 22ms）
+// 牌位姿：收拢=小错位叠放；推开=横向铺开（卡宽与间距随屏幕/张数自适应，顶牌先动逐张错开 22ms）
 function wrapStyle(group, idx) {
   const n = group.visible.length
   if (!spreadKey.value || spreadKey.value !== group.key) {
     return { '--tx': `${idx * 4}px`, '--ty': `${idx * -3}px`, '--delay': '0ms', zIndex: idx + 1 }
   }
+  const cardW = isDesktop.value ? 150 : 118
   const pileW = Math.min(760, window.innerWidth - 48)
-  const gap = Math.min(64, Math.max(24, (pileW - 160) / Math.max(1, n - 1)))
+  const gap = Math.min(isDesktop.value ? 64 : 36, Math.max(isDesktop.value ? 24 : 16, (pileW - cardW) / Math.max(1, n - 1)))
   return { '--tx': `${idx * gap}px`, '--ty': '0px', '--delay': `${(n - 1 - idx) * 22}ms`, zIndex: idx + 1 }
+}
+
+// 手机端"按住半抽"：按住卡牌立即浮起预览（模拟桌面 hover）；纵向滑动页面时取消
+const pressedKey = ref('')
+let touchStartXY = { x: 0, y: 0 }
+function onCardTouchStart(e, key) {
+  pressedKey.value = key
+  touchStartXY = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+}
+function onCardTouchMove(e) {
+  const dx = Math.abs(e.touches[0].clientX - touchStartXY.x)
+  const dy = Math.abs(e.touches[0].clientY - touchStartXY.y)
+  if (dy > 8 && dy > dx) pressedKey.value = '' // 纵向滚屏，取消半抽
+}
+function onCardTouchEnd() {
+  pressedKey.value = ''
 }
 
 function summary(question) {
@@ -230,7 +247,7 @@ function clearAll() {
   <div class="page book">
     <van-nav-bar title="错题本" fixed placeholder left-arrow @click-left="router.push('/')" />
 
-    <div class="content">
+    <div class="content" @click="onBackdrop">
       <!-- 未完成对话入口（FR-12） -->
       <button v-if="hasDraft" class="draft-banner" @click="router.push('/chat')">
         <span class="draft-title">继续上次对话</span>
@@ -270,13 +287,18 @@ function clearAll() {
             <span class="pile-name">{{ g.key }}</span>
             <span class="pile-count">{{ g.count }} 张</span>
           </div>
-          <div class="pile" :class="{ spread: spreadKey === g.key }" @click="onBackdrop">
+          <div class="pile" :class="{ spread: spreadKey === g.key }">
             <div
               v-for="(c, idx) in g.visible"
               :key="c.id + g.key"
               class="pcard-wrap"
+              :class="{ peek: pressedKey === c.id + g.key }"
               :style="wrapStyle(g, idx)"
               @click.stop="drawCard(c)"
+              @touchstart="onCardTouchStart($event, c.id + g.key)"
+              @touchmove="onCardTouchMove"
+              @touchend="onCardTouchEnd"
+              @touchcancel="onCardTouchEnd"
             >
               <div class="pcard">
                 <div class="pcard-pills">
@@ -302,7 +324,7 @@ function clearAll() {
             </button>
           </div>
         </div>
-        <p class="pile-hint">点牌堆推开 · 悬停半抽 · 点单张抽出详看 · 点空白收拢</p>
+        <p class="pile-hint">点牌堆推开 · 按住/悬停半抽 · 点单张抽出详看 · 点空白收拢</p>
       </template>
 
       <!-- 桌面表格管理视图（3.5） -->
@@ -477,26 +499,45 @@ function clearAll() {
 
 .pile {
   position: relative;
-  height: 200px;
+  height: 168px;
 }
 
 .pcard-wrap {
   position: absolute;
   left: 0;
   top: 0;
-  width: 150px;
-  height: 200px;
+  width: 118px;
+  height: 168px;
   transform: translate(var(--tx, 0), calc(var(--ty, 0) + var(--lift, 0px)));
   transition: transform 0.3s cubic-bezier(0.34, 1.8, 0.64, 1);
   transition-delay: var(--delay, 0ms);
   cursor: pointer;
 }
 
-/* 悬停半抽：仅"已推开"的牌堆 + 桌面端（3.3） */
+@media (min-width: 768px) {
+  .pile {
+    height: 200px;
+  }
+
+  .pcard-wrap {
+    width: 150px;
+    height: 200px;
+  }
+}
+
+/* 悬停半抽：桌面端；按住半抽：手机端模拟 hover 预览（3.3） */
 @media (hover: hover) and (min-width: 768px) {
   .pile.spread .pcard-wrap:hover {
     --lift: -16px;
   }
+}
+
+.pile.spread .pcard-wrap.peek {
+  --lift: -16px;
+}
+
+.pile.spread .pcard-wrap.peek .pcard {
+  box-shadow: 0 8px 18px rgba(217, 119, 6, 0.2);
 }
 
 .pcard {
