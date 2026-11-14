@@ -151,96 +151,6 @@ function dateOf(card) {
   return (card.created_at || '').slice(0, 10)
 }
 
-// ---- 示例数据（测试交互用）：数学卡 ×6，含 LaTeX ----
-const DEMO_CARDS = [
-  {
-    id: 'demo-1', created_at: '2026-11-13T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['一元二次方程'],
-    question: '解方程：$x^2 - 4x + 3 = 0$',
-    student_wrong_answer: '我直接开方得到了 $x^2-4x=-3$，然后就卡住了',
-    wrong_reason: { category: '方法缺失', analysis: '学生说"直接开方卡住了"，说明没有先尝试因式分解或配方法的意识' },
-    correct_solution: ['移项：$x^2 - 4x = -3$', '因式分解：$(x-1)(x-3)=0$', '得 $x_1=1,\\ x_2=3$'],
-    final_answer: '$x_1=1,\\ x_2=3$',
-    variant_question: '解方程：$x^2 - 6x + 8 = 0$',
-    variant_answer: '因式分解 $(x-2)(x-4)=0$，得 $x_1=2,\\ x_2=4$',
-    insight_quote: '原来先因式分解两个根就出来了！', chat_summary: '从硬开方到学会因式分解求解。',
-  },
-  {
-    id: 'demo-2', created_at: '2026-11-12T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['二次函数'],
-    question: '求抛物线 $y = x^2 - 2x - 3$ 的顶点坐标与开口方向',
-    student_wrong_answer: '我以为是 $(1,-3)$，把常数项当成了最低点',
-    wrong_reason: { category: '概念不清', analysis: '学生把常数项当作顶点纵坐标，说"以为最低点就是 -3"，概念不清' },
-    correct_solution: ['配方：$y = (x^2-2x+1) - 4$', '即 $y=(x-1)^2-4$', '顶点 $(1,-4)$，开口向上'],
-    final_answer: '顶点 $(1,-4)$，开口向上',
-    variant_question: '求 $y = x^2 + 4x + 5$ 的顶点坐标',
-    variant_answer: '配方 $y=(x+2)^2+1$，顶点 $(-2,1)$',
-    insight_quote: '原来配方就能看出顶点！', chat_summary: '补齐了配方法求顶点的思路。',
-  },
-  {
-    id: 'demo-3', created_at: '2026-11-11T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['分式化简'],
-    question: '化简：$\\frac{x^2-1}{x-1}$',
-    student_wrong_answer: '我不会约分，分子分母看起来没有公因式',
-    wrong_reason: { category: '方法缺失', analysis: '学生说"看不到公因式"，没想到先把分子因式分解' },
-    correct_solution: ['分子因式分解：$x^2-1=(x+1)(x-1)$', '约去 $(x-1)$', '得 $x+1\\ (x \\neq 1)$'],
-    final_answer: '$x+1\\ (x \\neq 1)$',
-    variant_question: '化简：$\\frac{a^2-4}{a+2}$',
-    variant_answer: '$\\frac{(a+2)(a-2)}{a+2}=a-2\\ (a \\neq -2)$',
-    insight_quote: '先把分子因式分解再约分就通了！', chat_summary: '掌握先分解后约分的化简套路。',
-  },
-  {
-    id: 'demo-4', created_at: '2026-11-10T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['圆的切线'],
-    question: 'PA 是 $\\odot O$ 的切线，A 为切点，求 $\\angle OAB$ 与 $\\angle PAB$ 的关系（B 在圆上）',
-    student_wrong_answer: '我以为切线和半径是平行的',
-    wrong_reason: { category: '概念不清', analysis: '学生说"以为切线和半径平行"，混淆了切线性质' },
-    correct_solution: ['切线性质：$OA \\perp PA$', '所以 $\\angle OAP = 90°$', '$\\angle OAB = 90° - \\angle PAB$'],
-    final_answer: '$\\angle OAB + \\angle PAB = 90°$',
-    variant_question: '切线 PA 切圆于 A，$\\angle PAB = 30°$，求 $\\angle OAB$',
-    variant_answer: '$\\angle OAB = 90° - 30° = 60°$',
-    insight_quote: '切线永远垂直于过切点的半径！', chat_summary: '记牢切线性质定理。',
-  },
-  {
-    id: 'demo-5', created_at: '2026-11-09T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['概率初步'],
-    question: '袋中有 3 个红球 2 个白球，除颜色外相同。一次摸出 2 个球，都是红球的概率是多少？',
-    student_wrong_answer: '我算成 $\\frac{3}{5} \\times \\frac{3}{5} = \\frac{9}{25}$',
-    wrong_reason: { category: '概念不清', analysis: '学生说"每次都是五分之三"，没意识到第一次摸出后袋中构成变了（不放回）' },
-    correct_solution: ['第一次摸红：$\\frac{3}{5}$', '第二次摸红（剩 2 红 2 白）：$\\frac{2}{4}$', '相乘：$\\frac{3}{5} \\times \\frac{2}{4} = \\frac{3}{10}$'],
-    final_answer: '$\\frac{3}{10}$',
-    variant_question: '摸出 2 个球，一红一白的概率是多少？',
-    variant_answer: '$2 \\times \\frac{3}{5} \\times \\frac{2}{4} = \\frac{3}{5}$（红白或白红两种顺序）',
-    insight_quote: '第一次摸完袋子里的构成变了！', chat_summary: '理解不放回抽取的分步概率。',
-  },
-  {
-    id: 'demo-6', created_at: '2026-11-08T10:00:00Z', subject: '数学', grade_band: '初中',
-    knowledge_points: ['全等三角形'],
-    question: '已知 AB=AC，AD 平分 ∠BAC 交 BC 于 D，说明 △ABD ≌ △ACD 的判定依据',
-    student_wrong_answer: '我用了"边边角"来说明全等',
-    wrong_reason: { category: '审题偏差', analysis: '学生说"我用了边边角"，忽略了 SSA 不是有效判定，而这里实为 SAS（AD 平分角给出夹角相等）' },
-    correct_solution: ['$AB=AC$（已知）', '$\\angle BAD=\\angle CAD$（角平分线）', '$AD=AD$（公共边）', 'SAS 判定全等'],
-    final_answer: '判定依据是 SAS（两边及夹角）',
-    variant_question: '若改为 AD 是 BC 边上的中线，其他条件不变，还能判定全等吗？',
-    variant_answer: '可以：$BD=CD$，用 SSS（$AB=AC$、$BD=CD$、$AD=AD$）判定',
-    insight_quote: '原来是夹角，不是随便一个角！', chat_summary: '分清 SAS 与无效的 SSA。',
-  },
-]
-
-function fillDemo() {
-  const existing = JSON.parse(localStorage.getItem('mc_cards') || '[]')
-  const ids = new Set(existing.map((c) => c.id))
-  const toAdd = DEMO_CARDS.filter((c) => !ids.has(c.id))
-  if (!toAdd.length) {
-    showToast('示例卡已在错题本中')
-    return
-  }
-  existing.unshift(...toAdd)
-  localStorage.setItem('mc_cards', JSON.stringify(existing))
-  load()
-  showToast(`已添加 ${toAdd.length} 张示例卡`)
-}
-
 function clearAll() {
   showConfirmDialog({
     title: '清空错题本',
@@ -283,7 +193,6 @@ function clearAll() {
             <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">表格</button>
             <button :class="{ active: viewMode === 'pile' }" @click="viewMode = 'pile'">牌堆</button>
           </div>
-          <button class="mini-btn" @click="fillDemo">填充示例</button>
           <button v-if="cards.length" class="mini-btn danger" @click="clearAll">清空</button>
         </div>
       </div>
@@ -424,6 +333,7 @@ function clearAll() {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 16px;
+  flex-wrap: wrap; /* 手机窄屏放不下时整体换行，不挤压按钮 */
 }
 
 .tools-right {
@@ -440,6 +350,7 @@ function clearAll() {
   font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .mini-btn.danger {
@@ -462,11 +373,24 @@ function clearAll() {
   font-size: 13px;
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap; /* 按钮文字禁止折行 */
 }
 
 .seg button.active {
   background: var(--accent);
   color: #fff;
+}
+
+/* 手机：收紧内边距与字号，保证维度胶囊 + 清空一行放下 */
+@media (max-width: 430px) {
+  .seg button {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .mini-btn {
+    padding: 4px 10px;
+  }
 }
 
 .pill {
