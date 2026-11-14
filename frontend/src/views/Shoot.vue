@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
+import { compressImage } from '../utils/image'
 import { getKeys } from '../store/keys'
 import { loadDraft } from '../store/chat'
 import { session } from '../store/session'
@@ -61,11 +62,13 @@ function onPaste(e) {
 
 async function recognize(file) {
   if (loading.value) return
-  previewUrl.value = URL.createObjectURL(file)
   loading.value = true
-  showLoadingToast({ message: 'AI 正在识别题目…', duration: 0, forbidClick: true })
+  showLoadingToast({ message: '正在压缩图片…', duration: 0, forbidClick: true })
   try {
-    const data = await recognizeImage(file)
+    const blob = await compressImage(file) // 压缩后再上传：识别更快，防免费模型超时
+    previewUrl.value = URL.createObjectURL(blob)
+    showLoadingToast({ message: 'AI 正在识别题目…', duration: 0, forbidClick: true })
+    const data = await recognizeImage(blob)
     Object.assign(session, {
       imageDataUrl: previewUrl.value,
       subject: data.subject,

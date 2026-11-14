@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast, showImagePreview, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
+import { compressImage } from '../utils/image'
 import { renderMixed } from '../utils/render'
 import { resetSession, session } from '../store/session'
 
@@ -106,12 +107,13 @@ async function reRecognize(box) {
   canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
   if (!blob) return
+  const uploadBlob = await compressImage(blob) // 裁剪区仍可能偏大，统一压缩后上传
 
   showLoadingToast({ message: '正在按圈选区域重新识别…', duration: 0, forbidClick: true })
   try {
-    const data = await recognizeImage(blob)
+    const data = await recognizeImage(uploadBlob)
     Object.assign(session, {
-      imageDataUrl: URL.createObjectURL(blob),
+      imageDataUrl: URL.createObjectURL(uploadBlob),
       subject: data.subject,
       questionText: data.question_text,
       studentWork: data.student_work,
