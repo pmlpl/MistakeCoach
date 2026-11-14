@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
@@ -16,6 +16,7 @@ const desktopInput = ref(null)
 const dragging = ref(false)
 const loading = ref(false)
 const previewUrl = ref('')
+const previewBlob = ref(null) // 待识别图（已压缩，可能已被圈选裁剪）
 
 // 未配 Key 引导（3.6 纯 BYOK）：识别必须有智谱 Key
 const needKey = ref(false)
@@ -43,13 +44,13 @@ function pick(type) {
 function onPickFile(e) {
   const file = e.target.files?.[0]
   e.target.value = '' // 允许重复选择同一文件
-  if (file) recognize(file)
+  if (file) prepare(file)
 }
 
 function onDrop(e) {
   dragging.value = false
   const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'))
-  if (file) recognize(file)
+  if (file) prepare(file)
   else showToast('请拖入图片文件')
 }
 
@@ -57,18 +58,36 @@ function onDrop(e) {
 function onPaste(e) {
   const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'))
   const file = item?.getAsFile()
-  if (file) recognize(file)
+  if (file) prepare(file)
 }
 
-async function recognize(file) {
-  if (loading.value) return
-  loading.value = true
-  showLoadingToast({ message: '正在压缩图片…', duration: 0, forbidClick: true })
+// 选图后先进预览态：可先圈出题目，再手动点识别（圈选在识别之前完成）
+async function prepare(file) {
   try {
     const blob = await compressImage(file) // 压缩后再上传：识别更快，防免费模型超时
     previewUrl.value = URL.createObjectURL(blob)
-    showLoadingToast({ message: 'AI 正在识别题目…', duration: 0, forbidClick: true })
-    const data = await recognizeImage(blob)
+    previewBlob.value = blob
+    cropMode.value = false
+    cropBox.value = null
+  } catch (err) {
+    showToast(err.message)
+  }
+}
+
+function clearPreview() {
+  URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewBlob.value = null
+  cropMode.value = false
+  cropBox.value = null
+}
+
+async function startRecognize() {
+  if (!previewBlob.value || loading.value) return
+  loading.value = true
+  showLoadingToast({ message: 'AI 正在识别题目…', duration: 0, forbidClick: true })
+  try {
+    const data = await recognizeImage(previewBlob.value)
     Object.assign(session, {
       imageDataUrl: previewUrl.value,
       subject: data.subject,
@@ -79,12 +98,88 @@ async function recognize(file) {
     })
     router.push('/verify')
   } catch (err) {
-    previewUrl.value = '' // 失败回到选择入口，允许换一张
-    showToast({ message: `识别失败：${err.message}`, duration: 5000 }) // 停留久一点，方便看清原因
+    showToast({ message: `识别失败：${err.message}`, duration: 5000 }) // 保留预览便于重试
   } finally {
     loading.value = false
     closeToast()
   }
+}
+
+// ---- 圈选题目：拖框框住要问的题，松手即裁剪替换预览 ----
+const imgEl = ref(null)
+const cropMode = ref(false)
+const cropping = ref(false)
+const cropBox = ref(null) // { x, y, w, h } 相对图片显示区的 px
+let dragStart = null
+let dragRect = null
+
+const boxStyle = computed(() => {
+  const b = cropBox.value
+  return b ? { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` } : {}
+})
+
+function toggleCrop() {
+  cropMode.value = !cropMode.value
+  cropBox.value = null
+}
+
+function onCropDown(e) {
+  if (!cropMode.value) return
+  dragRect = imgEl.value.getBoundingClientRect()
+  dragStart = { x: e.clientX - dragRect.left, y: e.clientY - dragRect.top }
+  cropBox.value = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 }
+  cropping.value = true
+  imgEl.value.setPointerCapture?.(e.pointerId) // 拖出图片仍能收到 move/up
+}
+
+function onCropMove(e) {
+  if (!cropping.value) return
+  const x = Math.min(Math.max(e.clientX - dragRect.left, 0), dragRect.width)
+  const y = Math.min(Math.max(e.clientY - dragRect.top, 0), dragRect.height)
+  cropBox.value = {
+    x: Math.min(dragStart.x, x),
+    y: Math.min(dragStart.y, y),
+    w: Math.abs(x - dragStart.x),
+    h: Math.abs(y - dragStart.y),
+  }
+}
+
+function onCropUp() {
+  if (!cropping.value) return
+  cropping.value = false
+  const b = cropBox.value
+  if (!b || b.w < 40 || b.h < 40) {
+    cropBox.value = null // 太小视为误触
+    return
+  }
+  const img = imgEl.value
+  const natW = img.naturalWidth
+  const natH = img.naturalHeight
+  // object-fit: contain：显示框与实际绘制区存在留白偏移，先映射回原图像素坐标
+  const scale = Math.min(img.clientWidth / natW, img.clientHeight / natH)
+  const offX = (img.clientWidth - natW * scale) / 2
+  const offY = (img.clientHeight - natH * scale) / 2
+  const sx = Math.max(0, (b.x - offX) / scale)
+  const sy = Math.max(0, (b.y - offY) / scale)
+  const sw = Math.min(natW - sx, b.w / scale)
+  const sh = Math.min(natH - sy, b.h / scale)
+  if (sw < 10 || sh < 10) {
+    cropBox.value = null
+    return
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(sw)
+  canvas.height = Math.round(sh)
+  canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    URL.revokeObjectURL(previewUrl.value)
+    previewBlob.value = blob
+    previewUrl.value = URL.createObjectURL(blob)
+    cropMode.value = false
+    cropBox.value = null
+    showToast('已按圈选裁剪，点「开始识别」继续')
+  }, 'image/jpeg', 0.92)
 }
 </script>
 
@@ -116,9 +211,30 @@ async function recognize(file) {
       </button>
 
       <template v-if="previewUrl">
-        <!-- 识别中预览 -->
+        <!-- 识别前预览：可先圈出题目，再手动开始识别 -->
         <div class="preview">
-          <img :src="previewUrl" alt="题目照片" />
+          <div class="photo-wrap">
+            <img
+              ref="imgEl"
+              :src="previewUrl"
+              alt="题目照片"
+              :class="{ cropping: cropMode }"
+              draggable="false"
+              @pointerdown="onCropDown"
+              @pointermove="onCropMove"
+              @pointerup="onCropUp"
+              @pointercancel="onCropUp"
+            />
+            <div v-if="cropBox" class="crop-box" :style="boxStyle"></div>
+          </div>
+          <p class="preview-hint">
+            {{ cropMode ? '在图上拖一个框，框住要问的那道题' : '可以先圈出题目，也可以直接开始识别' }}
+          </p>
+          <div class="preview-actions">
+            <button class="big-btn" :disabled="loading" @click="startRecognize">开始识别</button>
+            <button class="big-btn secondary" @click="toggleCrop">{{ cropMode ? '取消圈选' : '圈出题目' }}</button>
+            <button class="text-btn" @click="clearPreview">重选一张</button>
+          </div>
         </div>
       </template>
 
@@ -316,10 +432,64 @@ async function recognize(file) {
   line-height: 1.9;
 }
 
+/* 识别前预览 + 圈选 */
 .preview img {
   display: block;
   width: 100%;
+  max-height: 50vh;
+  object-fit: contain;
   border-radius: var(--radius);
   border: 1px solid var(--border);
+  background: #fff;
+}
+
+.photo-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden; /* 圈选暗化遮罩只盖图片区域 */
+}
+
+.preview img.cropping {
+  cursor: crosshair;
+  touch-action: none; /* 手机上圈选时禁止页面滚动 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45); /* 框外暗化 */
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.preview-hint {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.preview-actions .big-btn {
+  width: 100%;
+}
+
+.text-btn {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px;
 }
 </style>
