@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showImagePreview } from 'vant'
+import { closeToast, showImagePreview, showLoadingToast, showToast } from 'vant'
+import { recognizeImage } from '../api'
 import { renderMixed } from '../utils/render'
 import { resetSession, session } from '../store/session'
 
@@ -26,6 +27,106 @@ function retake() {
   resetSession()
   router.push('/')
 }
+
+// ---- 圈选重识：AI 选错题时，手动框住要问的那道题，裁剪后重新识别 ----
+const imgEl = ref(null)
+const cropMode = ref(false) // 是否处于圈选模式
+const cropping = ref(false) // 正在拖框
+const cropBox = ref(null) // { x, y, w, h } 相对图片显示区的 px
+let dragStart = null
+let dragRect = null
+
+const boxStyle = computed(() => {
+  const b = cropBox.value
+  return b ? { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` } : {}
+})
+
+function toggleCrop() {
+  cropMode.value = !cropMode.value
+  cropBox.value = null
+}
+
+function onPhotoClick() {
+  if (cropMode.value) return // 圈选时点击不再放大预览
+  showImagePreview({ images: [session.imageDataUrl], closeable: true, closeOnPopstate: true, showIndex: false })
+}
+
+function onCropDown(e) {
+  if (!cropMode.value) return
+  dragRect = imgEl.value.getBoundingClientRect()
+  dragStart = { x: e.clientX - dragRect.left, y: e.clientY - dragRect.top }
+  cropBox.value = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 }
+  cropping.value = true
+  imgEl.value.setPointerCapture?.(e.pointerId) // 拖出图片仍能收到 move/up
+}
+
+function onCropMove(e) {
+  if (!cropping.value) return
+  const x = Math.min(Math.max(e.clientX - dragRect.left, 0), dragRect.width)
+  const y = Math.min(Math.max(e.clientY - dragRect.top, 0), dragRect.height)
+  cropBox.value = {
+    x: Math.min(dragStart.x, x),
+    y: Math.min(dragStart.y, y),
+    w: Math.abs(x - dragStart.x),
+    h: Math.abs(y - dragStart.y),
+  }
+}
+
+async function onCropUp() {
+  if (!cropping.value) return
+  cropping.value = false
+  const b = cropBox.value
+  if (!b || b.w < 40 || b.h < 40) {
+    cropBox.value = null // 太小视为误触
+    return
+  }
+  await reRecognize(b)
+}
+
+async function reRecognize(box) {
+  const img = imgEl.value
+  const natW = img.naturalWidth
+  const natH = img.naturalHeight
+  // object-fit: contain：显示框与实际绘制区存在留白偏移，先映射回原图像素坐标
+  const scale = Math.min(img.clientWidth / natW, img.clientHeight / natH)
+  const offX = (img.clientWidth - natW * scale) / 2
+  const offY = (img.clientHeight - natH * scale) / 2
+  const sx = Math.max(0, (box.x - offX) / scale)
+  const sy = Math.max(0, (box.y - offY) / scale)
+  const sw = Math.min(natW - sx, box.w / scale)
+  const sh = Math.min(natH - sy, box.h / scale)
+  if (sw < 10 || sh < 10) {
+    cropBox.value = null
+    return
+  }
+  // canvas 裁出圈选区域，转 JPEG 复用识别接口
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(sw)
+  canvas.height = Math.round(sh)
+  canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+  if (!blob) return
+
+  showLoadingToast({ message: '正在按圈选区域重新识别…', duration: 0, forbidClick: true })
+  try {
+    const data = await recognizeImage(blob)
+    Object.assign(session, {
+      imageDataUrl: URL.createObjectURL(blob),
+      subject: data.subject,
+      questionText: data.question_text,
+      studentWork: data.student_work,
+      hasHandwriting: data.has_handwriting,
+      verified: false,
+    })
+    cropMode.value = false
+    cropBox.value = null
+    showToast('已按圈选区域重新识别')
+  } catch (err) {
+    showToast(err.message) // 失败保留圈选模式，方便重圈
+  } finally {
+    closeToast()
+  }
+}
 </script>
 
 <template>
@@ -33,15 +134,28 @@ function retake() {
     <van-nav-bar title="确认题目" fixed placeholder left-arrow @click-left="router.push('/')" />
 
     <div class="layout">
-      <!-- 原图对照（手机在上 / 桌面在左，3.1 + 3.5） -->
+      <!-- 原图对照（手机在上 / 桌面在左，3.1 + 3.5）；圈选模式支持手动框住要问的题 -->
       <section class="photo-panel">
-        <img
-          class="photo"
-          :src="session.imageDataUrl"
-          alt="原题照片"
-          @click="showImagePreview({ images: [session.imageDataUrl], closeable: true, closeOnPopstate: true, showIndex: false })"
-        />
-        <p class="hint">点击图片可放大核对</p>
+        <div class="photo-wrap">
+          <img
+            ref="imgEl"
+            class="photo"
+            :class="{ cropping: cropMode }"
+            :src="session.imageDataUrl"
+            alt="原题照片"
+            draggable="false"
+            @click="onPhotoClick"
+            @pointerdown="onCropDown"
+            @pointermove="onCropMove"
+            @pointerup="onCropUp"
+            @pointercancel="onCropUp"
+          />
+          <div v-if="cropBox" class="crop-box" :style="boxStyle"></div>
+        </div>
+        <p class="hint">{{ cropMode ? '在图上拖一个框，框住要问的那道题' : '点击图片可放大核对' }}</p>
+        <button class="crop-btn" :class="{ active: cropMode }" @click="toggleCrop">
+          {{ cropMode ? '取消圈选' : '识别错了题？圈出要问的题目' }}
+        </button>
       </section>
 
       <!-- 核验表单 -->
@@ -152,6 +266,47 @@ function retake() {
   text-align: center;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* ---- 圈选重识 ---- */
+.photo-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden; /* 圈选暗化遮罩只盖图片区域 */
+}
+
+.photo.cropping {
+  cursor: crosshair;
+  touch-action: none; /* 手机上圈选时禁止页面滚动 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45); /* 框外暗化 */
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.crop-btn {
+  display: block;
+  margin: 8px auto 0;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.crop-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .form-panel {
