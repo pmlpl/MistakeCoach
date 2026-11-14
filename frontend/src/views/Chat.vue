@@ -11,7 +11,6 @@ import {
   applyHardRules,
   applyServerState,
   chat,
-  clearDraft,
   loadDraft,
   pushMessage,
   removeMessage,
@@ -104,8 +103,8 @@ async function onNote() {
   showLoadingToast({ message: '正在生成错题卡…', duration: 0, forbidClick: true })
   try {
     const card = await noteGenerate(session.questionText, session.studentWork, msgs)
-    session.pendingCard = card
-    clearDraft(session.sessionId) // 只清当前题的会话桶，其他未完成对话保留
+    // 卡片带上 sessionId：生成卡后对话桶保留（不再 clear），复习时能从错题卡回到这道题继续追问
+    session.pendingCard = { ...card, sessionId: session.sessionId }
     closeToast()
     router.push(`/card/${card.id}`)
   } catch (e) {

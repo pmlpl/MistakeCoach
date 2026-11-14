@@ -5,15 +5,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
-import { latestDraft } from '../store/chat'
+import { listDrafts } from '../store/chat'
 import { renderMixed } from '../utils/render'
 
 const router = useRouter()
 
 const cards = ref([])
-const hasDraft = ref(false)
-const draftPreview = ref('')
-const draftSid = ref('') // 未完成对话的会话桶 id：横幅按它恢复对应题的对话
+const ongoing = ref([]) // 进行中的对话（尚未生成错题卡的会话桶）：最近更新在前，最多展示 3 条
+const draftSids = ref(new Set()) // 全部现存会话桶 id：判断某张卡是否还有可回访的对话
 
 const DIMS = [
   { key: 'subject', label: '学科' },
@@ -35,15 +34,36 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 function load() {
   cards.value = JSON.parse(localStorage.getItem('mc_cards') || '[]')
-  const draft = latestDraft() // 多个未完成会话时取最近更新的
-  hasDraft.value = !!draft
-  draftPreview.value = draft?.question?.questionText?.slice(0, 40) || ''
-  draftSid.value = draft?.sid || ''
+  const drafts = listDrafts()
+  draftSids.value = new Set(drafts.map((d) => d.sid))
+  // 已生成错题卡的会话从"进行中"隐藏——它的入口在卡片浮层的「继续这题的对话」，避免两个入口指向同一题
+  const carded = new Set(cards.value.map((c) => c.sessionId).filter(Boolean))
+  ongoing.value = drafts.filter((d) => !carded.has(d.sid)).slice(0, 3)
 }
 
-// 继续未完成对话：带会话桶 id 进入，恢复对应题的对话
-function goDraft() {
-  router.push({ name: 'chat', query: { sid: draftSid.value } })
+// 继续进行中的对话：带会话桶 id 进入，恢复对应题的对话
+function goDraft(d) {
+  router.push({ name: 'chat', query: { sid: d.sid } })
+}
+
+function draftPreviewOf(d) {
+  return d.question?.questionText?.slice(0, 40) || ''
+}
+
+function timeOf(ts) {
+  const d = new Date(ts)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// 卡片能否回访对话：卡上记着 sessionId 且对应会话桶还在（桶超上限被裁剪过就没有了）
+function cardHasChat(card) {
+  return !!card?.sessionId && draftSids.value.has(card.sessionId)
+}
+
+// 从卡片浮层回到这道题的对话：历史消息与状态原样恢复
+function goChatCard(card) {
+  router.push({ name: 'chat', query: { sid: card.sessionId } })
 }
 
 function dimsOf(card, dim) {
@@ -177,12 +197,16 @@ function clearAll() {
     <van-nav-bar title="错题本" fixed placeholder left-arrow @click-left="router.push('/')" />
 
     <div class="content" @click="onBackdrop">
-      <!-- 未完成对话入口（FR-12）：按 sessionId 恢复对应题的对话 -->
-      <button v-if="hasDraft" class="draft-banner" @click="goDraft">
-        <span class="draft-title">继续上次对话</span>
-        <span class="draft-preview">{{ draftPreview }}</span>
-        <van-icon name="arrow" />
-      </button>
+      <!-- 进行中的对话入口（FR-12）：每题一个独立会话桶，按题目列出；点任意一条恢复对应题的对话 -->
+      <div v-if="ongoing.length" class="draft-box">
+        <div v-if="ongoing.length > 1" class="draft-box-head">进行中的对话（{{ ongoing.length }}）</div>
+        <button v-for="d in ongoing" :key="d.sid" class="draft-banner" @click="goDraft(d)">
+          <span v-if="ongoing.length === 1" class="draft-title">继续上次对话</span>
+          <span class="draft-preview">{{ draftPreviewOf(d) }}</span>
+          <span v-if="ongoing.length > 1" class="draft-time">{{ timeOf(d.updatedAt) }}</span>
+          <van-icon name="arrow" />
+        </button>
+      </div>
 
       <div class="tools">
         <div class="seg">
@@ -288,6 +312,14 @@ function clearAll() {
           <span class="ov-final-body" v-html="drawnFinalHtml"></span>
         </div>
         <div class="ov-actions">
+          <van-button
+            v-if="cardHasChat(drawnCard)"
+            type="primary"
+            size="small"
+            round
+            plain
+            @click="goChatCard(drawnCard)"
+          >继续这题的对话</van-button>
           <van-button type="primary" size="small" round @click="goCard(drawnCard)">查看完整错题卡</van-button>
           <van-button size="small" round plain @click="closeOverlay">放回牌堆</van-button>
         </div>
@@ -303,12 +335,24 @@ function clearAll() {
   padding: 12px 16px 40px;
 }
 
+/* 进行中的对话入口：多条时竖排列表，间距由 draft-box 统一控制 */
+.draft-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.draft-box-head {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .draft-banner {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  margin-bottom: 14px;
   padding: 12px 14px;
   background: #fff;
   border: 1.5px solid var(--accent);
@@ -330,6 +374,12 @@ function clearAll() {
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-time {
+  font-size: 11px;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
@@ -730,6 +780,7 @@ function clearAll() {
 
 .ov-actions {
   display: flex;
+  flex-wrap: wrap; /* 三个按钮时手机窄屏自动换行 */
   gap: 10px;
 }
 </style>

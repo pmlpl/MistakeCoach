@@ -16,7 +16,7 @@ const DIRECT_RE = /(直接讲|直接给|给我答案|告诉我答案|不会了|�
 
 const DRAFT_KEY = 'mc_chat_draft' // 存 { v: 2, buckets: { [sessionId]: 会话桶 } }
 const LAST_SID_KEY = 'mc_chat_last_sid' // 最近活跃会话 id：刷新后无 sid 进入时恢复它
-const MAX_BUCKETS = 10 // 防长用撑爆 localStorage：只保留最近 10 个未完成会话桶
+const MAX_BUCKETS = 20 // 防长用撑爆 localStorage：只保留最近 20 个会话桶（每桶几 KB~几十 KB，5MB 额度足够）
 
 /** 每道题一个会话桶 id：拍题识别成功时分配（Shoot.vue），拍新题绝不触碰其他桶 */
 export function newSessionId() {
@@ -89,6 +89,14 @@ export function latestDraft() {
     if (!best || (buckets[key].updatedAt || 0) > (buckets[best].updatedAt || 0)) best = key
   }
   return best ? { ...buckets[best], sid: best } : null
+}
+
+/** 全部会话桶按最近更新排序：错题本用来展示「进行中的对话」列表（生成错题卡后桶保留，可从卡片回访） */
+export function listDrafts() {
+  const buckets = readBuckets()
+  return Object.keys(buckets)
+    .map((sid) => ({ sid, question: buckets[sid].question, updatedAt: buckets[sid].updatedAt || 0 }))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 /** 清空指定会话桶（生成错题卡成功后只清当前桶）；不传 sid 清最近活跃桶 */
