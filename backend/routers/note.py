@@ -12,8 +12,23 @@ from jsonfix import extract_json
 
 router = APIRouter(prefix="/api", tags=["note"])
 
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "note.txt")
+# 与 chat.py 同一套供应商映射（BYOK：服务端不内置任何 Key）
+PROVIDERS = {
+    "deepseek": {
+        "url": "https://api.deepseek.com/chat/completions",
+        "default_model": "deepseek-chat",
+        "env_model": "DEEPSEEK_MODEL",
+        "key_header": "X-Deepseek-Key",
+        "label": "DeepSeek",
+    },
+    "zhipu": {
+        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "default_model": "glm-4-flash",
+        "env_model": "ZHIPU_CHAT_MODEL",
+        "key_header": "X-Zhipu-Key",
+        "label": "智谱 GLM",
+    },
+}
 
 CATEGORIES = ("概念不清", "计算失误", "审题偏差", "方法缺失")
 
@@ -27,6 +42,10 @@ class NoteRequest(BaseModel):
     question_text: str
     student_work: str = ""
     transcript: list[NoteMessage] = []
+    chat_provider: str = "deepseek"  # deepseek | zhipu（3.6 访客在设置页选择）
+
+
+_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "note.txt")
 
 
 def _load_prompt() -> str:
@@ -61,11 +80,12 @@ def _normalize(card: dict) -> dict:
 
 @router.post("/note")
 async def note(req: NoteRequest, request: Request):
-    # Key 优先级：访客自带（请求头）> 服务端 .env 默认（3.6）
-    api_key = (request.headers.get("X-Deepseek-Key", "") or "").strip() or os.getenv("DEEPSEEK_API_KEY", "").strip()
+    # 纯 BYOK（3.6）：服务端不内置任何 Key，Key 只来自访客请求头
+    provider = PROVIDERS.get((req.chat_provider or "deepseek").strip()) or PROVIDERS["deepseek"]
+    api_key = (request.headers.get(provider["key_header"], "") or "").strip()
     if not api_key:
-        raise HTTPException(status_code=500, detail="没有可用的 DeepSeek Key：请在设置页填写，或在 backend/.env 配置后重启服务")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+        raise HTTPException(status_code=400, detail=f"还没有你的 {provider['label']} Key：请在应用「设置页」填写后重试（Key 仅存本机，不会上传服务器存储）")
+    model = (os.getenv(provider["env_model"], "") or "").strip() or provider["default_model"]
 
     transcript_text = "\n".join(
         f"{'学生' if m.role == 'user' else '教练'}：{m.content}"
@@ -82,12 +102,12 @@ async def note(req: NoteRequest, request: Request):
     async def call_once() -> dict:
         async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
             resp = await client.post(
-                DEEPSEEK_URL,
+                provider["url"],
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={"model": model, "messages": messages, "stream": False},
             )
         if resp.status_code in (401, 403):
-            raise HTTPException(status_code=502, detail="DeepSeek Key 无效或已过期，请在设置页检查后重试")
+            raise HTTPException(status_code=502, detail=f"{provider['label']} Key 无效或已过期，请在设置页检查后重试")
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail=f"对话服务返回异常（{resp.status_code}），请稍后再试")
         content = resp.json()["choices"][0]["message"]["content"]

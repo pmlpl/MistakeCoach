@@ -10,7 +10,24 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+# 对话供应商映射（3.6 BYOK：服务端不内置任何 Key，Key 全部来自请求头）
+PROVIDERS = {
+    "deepseek": {
+        "url": "https://api.deepseek.com/chat/completions",
+        "default_model": "deepseek-chat",
+        "env_model": "DEEPSEEK_MODEL",
+        "key_header": "X-Deepseek-Key",
+        "label": "DeepSeek",
+    },
+    "zhipu": {
+        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "default_model": "glm-4-flash",
+        "env_model": "ZHIPU_CHAT_MODEL",
+        "key_header": "X-Zhipu-Key",
+        "label": "智谱 GLM",
+    },
+}
+
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "chat.txt")
 
 # 回复末尾的机器标记（7.5）：⟦PHASE:P3|HINT:L2|MODE:guide⟧，HINT/MODE 可缺省（缺省沿用原状态）
@@ -36,6 +53,7 @@ class ChatRequest(BaseModel):
     student_work: str = ""
     state: ChatState = ChatState()
     messages: list[ChatMessage] = []
+    chat_provider: str = "deepseek"  # deepseek | zhipu（3.6 访客在设置页选择）
 
 
 def _load_prompt() -> str:
@@ -118,38 +136,45 @@ def _relay(up: httpx.Response, client: httpx.AsyncClient, state: ChatState):
 
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request):
-    # Key 优先级：访客自带（请求头）> 服务端 .env 默认（3.6）
-    api_key = (request.headers.get("X-Deepseek-Key", "") or "").strip() or os.getenv("DEEPSEEK_API_KEY", "").strip()
+    # 纯 BYOK（3.6）：服务端不内置任何 Key，Key 只来自访客请求头
+    provider = PROVIDERS.get((req.chat_provider or "deepseek").strip()) or PROVIDERS["deepseek"]
+    api_key = (request.headers.get(provider["key_header"], "") or "").strip()
     if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="没有可用的 DeepSeek Key：请在设置页填写，或在 backend/.env 配置后重启服务",
-        )
-
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+        raise HTTPException(status_code=400, detail=f"还没有你的 {provider['label']} Key：请在应用「设置页」填写后重试（Key 仅存本机，不会上传服务器存储）")
+    model = (os.getenv(provider["env_model"], "") or "").strip() or provider["default_model"]
 
     # 固定基底 system prompt：变量填充（replace 而非 format，防 prompt 中 JSON 花括号误解析），不随阶段切换（7.5）
     system_prompt = _load_prompt().replace("{question_text}", req.question_text).replace("{student_work}", req.student_work)
-    # 状态走末尾消息：system + 历史前缀保持稳定，命中 DeepSeek 前缀缓存（7.5）
-    state_directive = {
-        "role": "system",
-        "content": (
-            f"【当前状态指令】phase={req.state.phase}，hint_level=L{req.state.hint_level}，mode={req.state.mode}。"
-            "按 system prompt 中该阶段、该梯度、该模式的规则回复，并在回复末尾输出状态标记。"
-        ),
-    }
+    # 状态走末尾（7.5）：追加到最后一条消息内容内——供应商兼容（智谱要求消息严格交替，
+    # 独立 system 指令会 1214 报错），且不影响 DeepSeek 前缀缓存（追加处即最新消息）
     messages = [{"role": "system", "content": system_prompt}]
     messages += [
         {"role": m.role, "content": m.content}
         for m in req.messages
         if m.role in ("user", "assistant") and m.content
     ]
-    messages.append(state_directive)
+    # 保险：合并连续同角色消息（对 DeepSeek 是无害的幂等操作）
+    merged = []
+    for m in messages:
+        if merged and merged[-1]["role"] == m["role"]:
+            merged[-1]["content"] += "\n\n" + m["content"]
+        else:
+            merged.append(dict(m))
+    messages = merged
+
+    state_directive_text = (
+        f"\n\n【当前状态指令】phase={req.state.phase}，hint_level=L{req.state.hint_level}，mode={req.state.mode}。"
+        "按 system prompt 中该阶段、该梯度、该模式的规则回复，并在回复末尾输出状态标记。"
+    )
+    if messages and messages[-1]["role"] != "system":
+        messages[-1]["content"] += state_directive_text
+    else:
+        messages.append({"role": "user", "content": state_directive_text.strip()})
 
     client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
     up_req = client.build_request(
         "POST",
-        DEEPSEEK_URL,
+        provider["url"],
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": model, "messages": messages, "stream": True},
     )
@@ -162,7 +187,7 @@ async def chat(req: ChatRequest, request: Request):
         await up.aclose()
         await client.aclose()
         if up.status_code in (401, 403):
-            raise HTTPException(status_code=502, detail="DeepSeek Key 无效或已过期，请在设置页检查后重试")
+            raise HTTPException(status_code=502, detail=f"{provider['label']} Key 无效或已过期，请在设置页检查后重试")
         raise HTTPException(status_code=502, detail=f"对话服务返回异常（{up.status_code}），请稍后再试")
 
     return StreamingResponse(

@@ -66,8 +66,9 @@ npm run dev
 1. 代码推送到 GitHub（本仓库直接 push 即可）
 2. [Render](https://render.com) 注册 → **New Web Service** → 连接 GitHub 仓库
 3. Runtime 选 **Docker**（自动读取 Dockerfile），Region 选 Singapore（离国内近）
-4. **Environment** 添加两个变量：`ZHIPU_API_KEY`、`DEEPSEEK_API_KEY`（Key 走平台环境变量，绝不入仓库）
-5. Create → 自动构建部署，得到 `https://<名字>.onrender.com` 公网链接
+4. Create → 自动构建部署，得到 `https://<名字>.onrender.com` 公网链接
+
+> **无需配置任何模型 Key 环境变量**：本服务不内置 Key（纯 BYOK），访客在应用「设置页」填自己的 Key 即可——识别用智谱 Key（免费），对话可选 DeepSeek 或智谱 GLM-4-Flash（免费）。
 
 > 免费版 15 分钟无访问会休眠：演示前先自己打开页面预热一次（首次加载约 50 秒）。
 

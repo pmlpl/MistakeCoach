@@ -9,8 +9,15 @@ export function getKeys() {
   }
 }
 
-export function saveKeys({ zhipu = '', deepseek = '' }) {
-  localStorage.setItem(STORE_KEY, JSON.stringify({ zhipu: zhipu.trim(), deepseek: deepseek.trim() }))
+export function saveKeys({ zhipu = '', deepseek = '', chatProvider = 'deepseek' }) {
+  localStorage.setItem(
+    STORE_KEY,
+    JSON.stringify({
+      zhipu: zhipu.trim(),
+      deepseek: deepseek.trim(),
+      chatProvider: chatProvider === 'zhipu' ? 'zhipu' : 'deepseek',
+    }),
+  )
 }
 
 export function clearKeys() {

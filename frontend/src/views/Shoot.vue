@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
+import { getKeys } from '../store/keys'
 import { loadDraft } from '../store/chat'
 import { session } from '../store/session'
 
@@ -15,12 +16,16 @@ const dragging = ref(false)
 const loading = ref(false)
 const previewUrl = ref('')
 
+// 未配 Key 引导（3.6 纯 BYOK）：识别必须有智谱 Key
+const needKey = ref(false)
+
 // 草稿续聊入口（FR-12）：有未完成对话时拍题页显示横幅
 const hasDraft = ref(false)
 const draftPreview = ref('')
 
 onMounted(() => {
   window.addEventListener('paste', onPaste)
+  needKey.value = !getKeys().zhipu
   const d = loadDraft()
   if (d?.question?.questionText) {
     hasDraft.value = true
@@ -93,6 +98,13 @@ async function recognize(file) {
     </van-nav-bar>
 
     <main class="content">
+      <!-- 未配 Key 引导（3.6 纯 BYOK） -->
+      <button v-if="needKey && !previewUrl" class="key-banner" @click="router.push('/settings')">
+        <span class="key-title">先配置模型 Key</span>
+        <span class="key-desc">识别用智谱 Key（免费申请），到设置页粘贴即可</span>
+        <van-icon name="setting-o" />
+      </button>
+
       <!-- 继续上次对话（FR-12 草稿续聊入口，M3 并入错题本） -->
       <button v-if="hasDraft && !previewUrl" class="draft-banner" @click="router.push('/chat')">
         <span class="draft-title">继续上次对话</span>
@@ -161,6 +173,33 @@ async function recognize(file) {
   max-width: 640px;
   margin: 0 auto;
   padding: 24px 16px 40px;
+}
+
+.key-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: #fef3c7;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+}
+
+.key-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  white-space: nowrap;
+}
+
+.key-desc {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .draft-banner {

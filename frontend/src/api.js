@@ -11,13 +11,18 @@ async function request(path, options) {
   return data
 }
 
-/** 访客自带 Key：随请求头发送（后端优先用请求头 Key，缺省回落 .env，见文档 3.6） */
+/** 访客自带 Key：随请求头发送（纯 BYOK——服务端不内置任何 Key，见文档 3.6） */
 function authHeaders() {
   const { zhipu = '', deepseek = '' } = getKeys()
   const h = {}
   if (zhipu) h['X-Zhipu-Key'] = zhipu
   if (deepseek) h['X-Deepseek-Key'] = deepseek
   return h
+}
+
+/** 访客在设置页选择的对话/笔记供应商（deepseek | zhipu） */
+function chatProvider() {
+  return getKeys().chatProvider === 'zhipu' ? 'zhipu' : 'deepseek'
 }
 
 /** POST /api/recognize：multipart 图片 -> 识别 JSON */
@@ -32,7 +37,12 @@ export function noteGenerate(questionText, studentWork, transcript) {
   return request('/api/note', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ question_text: questionText, student_work: studentWork, transcript }),
+    body: JSON.stringify({
+      question_text: questionText,
+      student_work: studentWork,
+      transcript,
+      chat_provider: chatProvider(),
+    }),
   })
 }
 
@@ -50,7 +60,7 @@ export async function chatStream(payload, onDelta, onState) {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ chat_provider: chatProvider(), ...payload }),
       signal: controller.signal,
     })
     if (!res.ok) {

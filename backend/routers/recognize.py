@@ -25,10 +25,10 @@ def _normalize_text(s: str) -> str:
 
 
 def _call_glm(image_bytes: bytes, user_key: str = "") -> dict:
-    # Key 优先级：访客自带（请求头）> 服务端 .env 默认（3.6）
-    api_key = (user_key or "").strip() or os.getenv("ZHIPU_API_KEY", "").strip()
+    # 纯 BYOK（3.6）：识别统一使用访客在设置页配置的智谱 Key（GLM-4V-Flash 免费）
+    api_key = (user_key or "").strip()
     if not api_key:
-        raise RuntimeError("没有可用的智谱 Key：请在设置页填写，或在 backend/.env 配置后重启服务")
+        raise RuntimeError("还没有你的智谱 Key：请在应用「设置页」填写后重试（免费申请：open.bigmodel.cn）")
 
     model = os.getenv("ZHIPU_MODEL", "glm-4v-flash").strip() or "glm-4v-flash"
     b64 = base64.b64encode(image_bytes).decode()
@@ -64,7 +64,7 @@ async def recognize(request: Request, image: UploadFile = File(...)):
     try:
         result = _call_glm(image_bytes, user_key)
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except (httpx.HTTPError, KeyError):
         raise HTTPException(status_code=502, detail="识别服务暂时不可用，请稍后再试")
     except (json.JSONDecodeError, ValueError):
