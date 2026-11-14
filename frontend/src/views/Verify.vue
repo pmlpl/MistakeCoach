@@ -16,6 +16,15 @@ const previewHtml = computed(() => renderMixed(session.questionText))
 // 智能提醒：题干为空或 <10 字禁止进入对话（3.1）
 const questionTooShort = computed(() => session.questionText.trim().length < 10)
 
+// 选择题缺选项提醒：题干有选择题特征但没有任何选项标记时提示补充——
+// 对话模型看不到原图，选项缺失会导致 AI 无法分析选项甚至自己编造
+const missingChoices = computed(() => {
+  const t = session.questionText
+  const looksChoice = /(下列|哪个|哪些|哪一项|正确的?是|错误的?是|不正确|选出|相似|相容|相符)/.test(t)
+  const hasOptions = /\((?:A|B|C|D)\)|[ABCD][.．]/.test(t)
+  return looksChoice && !hasOptions
+})
+
 function confirm() {
   if (questionTooShort.value) return
   session.verified = true
@@ -54,6 +63,16 @@ function retake() {
           background="#FEF3C7"
         >
           没识别到你的作答，建议补充当时的错误思路，错因分析会更准
+        </van-notice-bar>
+
+        <van-notice-bar
+          v-if="missingChoices"
+          wrapable
+          :scrollable="false"
+          color="#92400E"
+          background="#FEF3C7"
+        >
+          这道题像是选择题，但没识别到选项内容——建议对照原图手动补上 A/B/C/D 各选项，或重新拍一张；不补的话对话时 AI 只能请你补充选项
         </van-notice-bar>
 
         <van-cell-group inset class="fields">
