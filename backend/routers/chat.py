@@ -1,4 +1,4 @@
-"""/api/chat：SSE 对话 —— 固定基底 prompt + 末尾状态指令，流式转调 DeepSeek（文档 6.2 / 7.5）"""
+"""/api/chat：SSE 对话 —— 固定基底 prompt + 末尾状态指令，流式转调访客选择的对话模型（文档 6.2 / 7.5）"""
 import json
 import os
 import re
@@ -8,25 +8,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api", tags=["chat"])
+from providers import resolve_config
 
-# 对话供应商映射（3.6 BYOK：服务端不内置任何 Key，Key 全部来自请求头）
-PROVIDERS = {
-    "deepseek": {
-        "url": "https://api.deepseek.com/chat/completions",
-        "default_model": "deepseek-chat",
-        "env_model": "DEEPSEEK_MODEL",
-        "key_header": "X-Deepseek-Key",
-        "label": "DeepSeek",
-    },
-    "zhipu": {
-        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "default_model": "glm-4.7-flash",
-        "env_model": "ZHIPU_CHAT_MODEL",
-        "key_header": "X-Zhipu-Key",
-        "label": "智谱 GLM",
-    },
-}
+router = APIRouter(prefix="/api", tags=["chat"])
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "chat.txt")
 
@@ -48,12 +32,21 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ChatModel(BaseModel):
+    """访客在设置页选择的对话模型（3.6 通用 BYOK）：provider/model/base_url 可全部自定义"""
+
+    provider: str = ""
+    model: str = ""
+    base_url: str = ""
+
+
 class ChatRequest(BaseModel):
     question_text: str = ""
     student_work: str = ""
     state: ChatState = ChatState()
     messages: list[ChatMessage] = []
-    chat_provider: str = "deepseek"  # deepseek | zhipu（3.6 访客在设置页选择）
+    chat_provider: str = ""  # 兼容旧前端：deepseek | zhipu
+    chat: ChatModel | None = None
 
 
 def _load_prompt() -> str:
@@ -136,12 +129,18 @@ def _relay(up: httpx.Response, client: httpx.AsyncClient, state: ChatState):
 
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request):
-    # 纯 BYOK（3.6）：服务端不内置任何 Key，Key 只来自访客请求头
-    provider = PROVIDERS.get((req.chat_provider or "deepseek").strip()) or PROVIDERS["deepseek"]
-    api_key = (request.headers.get(provider["key_header"], "") or "").strip()
-    if not api_key:
-        raise HTTPException(status_code=400, detail=f"还没有你的 {provider['label']} Key：请在应用「设置页」填写后重试（Key 仅存本机，不会上传服务器存储）")
-    model = (os.getenv(provider["env_model"], "") or "").strip() or provider["default_model"]
+    # 纯 BYOK（3.6）：服务端不内置任何 Key；模型与 Key 全部来自访客请求
+    chat_cfg = req.chat if (req.chat and (req.chat.provider or req.chat.model or req.chat.base_url)) else None
+    cfg = resolve_config(
+        request,
+        kind="chat",
+        header_prefix="X-Chat",
+        default_provider="deepseek",
+        provider=chat_cfg.provider if chat_cfg else (req.chat_provider or ""),
+        model=chat_cfg.model if chat_cfg else "",
+        base_url=chat_cfg.base_url if chat_cfg else "",
+    )
+    api_key, model, provider_url = cfg["key"], cfg["model"], cfg["url"]
 
     # 固定基底 system prompt：变量填充（replace 而非 format，防 prompt 中 JSON 花括号误解析），不随阶段切换（7.5）
     system_prompt = _load_prompt().replace("{question_text}", req.question_text).replace("{student_work}", req.student_work)
@@ -174,7 +173,7 @@ async def chat(req: ChatRequest, request: Request):
     client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
     up_req = client.build_request(
         "POST",
-        provider["url"],
+        provider_url,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": model, "messages": messages, "stream": True},
     )
@@ -187,9 +186,9 @@ async def chat(req: ChatRequest, request: Request):
         await up.aclose()
         await client.aclose()
         if up.status_code in (401, 403):
-            raise HTTPException(status_code=502, detail=f"{provider['label']} Key 无效或已过期，请在设置页检查后重试")
+            raise HTTPException(status_code=502, detail=f"{cfg['label']} Key 无效或已过期，请在设置页检查后重试")
         if up.status_code == 429:
-            raise HTTPException(status_code=502, detail="免费模型当前访问量过大，请稍后再试，或到设置页切换对话模型")
+            raise HTTPException(status_code=502, detail="模型当前访问量过大，请稍后再试，或到设置页切换对话模型")
         raise HTTPException(status_code=502, detail=f"对话服务返回异常（{up.status_code}），请稍后再试")
 
     return StreamingResponse(

@@ -1,4 +1,4 @@
-"""/api/note：对话 transcript -> DeepSeek 按固定 Schema 生成错题卡 JSON（6.3；容错：失败重试一次，category 越界归一）"""
+"""/api/note：对话 transcript -> 访客选择的对话模型按固定 Schema 生成错题卡 JSON（6.3；容错：失败重试一次）"""
 import json
 import os
 import uuid
@@ -9,26 +9,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from jsonfix import extract_json
+from providers import resolve_config
 
 router = APIRouter(prefix="/api", tags=["note"])
-
-# 与 chat.py 同一套供应商映射（BYOK：服务端不内置任何 Key）
-PROVIDERS = {
-    "deepseek": {
-        "url": "https://api.deepseek.com/chat/completions",
-        "default_model": "deepseek-chat",
-        "env_model": "DEEPSEEK_MODEL",
-        "key_header": "X-Deepseek-Key",
-        "label": "DeepSeek",
-    },
-    "zhipu": {
-        "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "default_model": "glm-4.7-flash",
-        "env_model": "ZHIPU_CHAT_MODEL",
-        "key_header": "X-Zhipu-Key",
-        "label": "智谱 GLM",
-    },
-}
 
 CATEGORIES = ("概念不清", "计算失误", "审题偏差", "方法缺失")
 
@@ -38,11 +21,18 @@ class NoteMessage(BaseModel):
     content: str
 
 
+class NoteChatModel(BaseModel):
+    provider: str = ""
+    model: str = ""
+    base_url: str = ""
+
+
 class NoteRequest(BaseModel):
     question_text: str
     student_work: str = ""
     transcript: list[NoteMessage] = []
-    chat_provider: str = "deepseek"  # deepseek | zhipu（3.6 访客在设置页选择）
+    chat_provider: str = ""  # 兼容旧前端：deepseek | zhipu
+    chat: NoteChatModel | None = None
 
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "note.txt")
@@ -80,12 +70,18 @@ def _normalize(card: dict) -> dict:
 
 @router.post("/note")
 async def note(req: NoteRequest, request: Request):
-    # 纯 BYOK（3.6）：服务端不内置任何 Key，Key 只来自访客请求头
-    provider = PROVIDERS.get((req.chat_provider or "deepseek").strip()) or PROVIDERS["deepseek"]
-    api_key = (request.headers.get(provider["key_header"], "") or "").strip()
-    if not api_key:
-        raise HTTPException(status_code=400, detail=f"还没有你的 {provider['label']} Key：请在应用「设置页」填写后重试（Key 仅存本机，不会上传服务器存储）")
-    model = (os.getenv(provider["env_model"], "") or "").strip() or provider["default_model"]
+    # 纯 BYOK（3.6）：服务端不内置任何 Key；模型与 Key 全部来自访客请求
+    chat_cfg = req.chat if (req.chat and (req.chat.provider or req.chat.model or req.chat.base_url)) else None
+    cfg = resolve_config(
+        request,
+        kind="chat",
+        header_prefix="X-Chat",
+        default_provider="deepseek",
+        provider=chat_cfg.provider if chat_cfg else (req.chat_provider or ""),
+        model=chat_cfg.model if chat_cfg else "",
+        base_url=chat_cfg.base_url if chat_cfg else "",
+    )
+    api_key, model = cfg["key"], cfg["model"]
 
     transcript_text = "\n".join(
         f"{'学生' if m.role == 'user' else '教练'}：{m.content}"
@@ -102,14 +98,14 @@ async def note(req: NoteRequest, request: Request):
     async def call_once() -> dict:
         async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
             resp = await client.post(
-                provider["url"],
+                cfg["url"],
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={"model": model, "messages": messages, "stream": False},
             )
         if resp.status_code in (401, 403):
-            raise HTTPException(status_code=502, detail=f"{provider['label']} Key 无效或已过期，请在设置页检查后重试")
+            raise HTTPException(status_code=502, detail=f"{cfg['label']} Key 无效或已过期，请在设置页检查后重试")
         if resp.status_code == 429:
-            raise HTTPException(status_code=502, detail="免费模型当前访问量过大，请稍后再试，或到设置页切换对话模型")
+            raise HTTPException(status_code=502, detail="模型当前访问量过大，请稍后再试，或到设置页切换对话模型")
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail=f"对话服务返回异常（{resp.status_code}），请稍后再试")
         content = resp.json()["choices"][0]["message"]["content"]

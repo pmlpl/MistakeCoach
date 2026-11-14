@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
 import { recognizeImage } from '../api'
 import { compressImage } from '../utils/image'
-import { getKeys } from '../store/keys'
+import { modelConfig } from '../store/keys'
 import { latestDraft, newSessionId } from '../store/chat'
 import { session } from '../store/session'
 
@@ -18,7 +18,7 @@ const loading = ref(false)
 const previewUrl = ref('')
 const previewBlob = ref(null) // 待识别图（已压缩，可能已被圈选裁剪）
 
-// 未配 Key 引导（3.6 纯 BYOK）：识别必须有智谱 Key
+// 未配 Key 引导（3.6 纯 BYOK）：识别按设置页所选模型检查对应 Key 是否就绪
 const needKey = ref(false)
 
 // 草稿续聊入口（FR-12）：有未完成对话时拍题页显示横幅，指向最近更新的会话桶
@@ -28,7 +28,7 @@ const draftSid = ref('')
 
 onMounted(() => {
   window.addEventListener('paste', onPaste)
-  needKey.value = !getKeys().zhipu
+  needKey.value = !modelConfig('recognize').key
   const d = latestDraft()
   if (d?.question?.questionText) {
     hasDraft.value = true
@@ -211,8 +211,8 @@ function confirmCrop() {
     <main class="content">
       <!-- 未配 Key 引导（3.6 纯 BYOK） -->
       <button v-if="needKey && !previewUrl" class="key-banner" @click="router.push('/settings')">
-        <span class="key-title">先配置模型 Key</span>
-        <span class="key-desc">识别用智谱 Key（免费申请），到设置页粘贴即可</span>
+        <span class="key-title">先配置识别模型</span>
+        <span class="key-desc">支持智谱（免费）/ DeepSeek / GPT / Claude 等，到设置页粘贴 Key 即可</span>
         <van-icon name="setting-o" />
       </button>
 

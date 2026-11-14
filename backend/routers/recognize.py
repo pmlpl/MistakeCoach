@@ -1,4 +1,4 @@
-"""/api/recognize：multipart 图片 -> GLM-4V-Flash -> 结构化 JSON（失败重试一次，502 兜底）"""
+"""/api/recognize：multipart 图片 -> 访客选择的视觉模型 -> 结构化 JSON（BYOK，失败重试一次）"""
 import base64
 import json
 import os
@@ -7,10 +7,10 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from jsonfix import extract_json
+from providers import resolve_config
 
 router = APIRouter(prefix="/api", tags=["recognize"])
 
-GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "prompts", "recognize.txt")
 
 
@@ -24,19 +24,14 @@ def _normalize_text(s: str) -> str:
     return s.replace("\\n", "\n").strip()
 
 
-def _call_glm(image_bytes: bytes, user_key: str = "") -> dict:
-    # 纯 BYOK（3.6）：识别统一使用访客在设置页配置的智谱 Key（GLM-4V-Flash 免费）
-    api_key = (user_key or "").strip()
-    if not api_key:
-        raise RuntimeError("还没有你的智谱 Key：请在应用「设置页」填写后重试（免费申请：open.bigmodel.cn）")
-
-    model = os.getenv("ZHIPU_MODEL", "glm-4v-flash").strip() or "glm-4v-flash"
+def _call_vision(image_bytes: bytes, cfg: dict) -> dict:
+    """OpenAI 兼容视觉调用（智谱/DeepSeek/GPT/Claude/Gemini/自定义统一走这条通道）"""
     b64 = base64.b64encode(image_bytes).decode()
     resp = httpx.post(
-        GLM_URL,
-        headers={"Authorization": f"Bearer {api_key}"},
+        cfg["url"],
+        headers={"Authorization": f"Bearer {cfg['key']}"},
         json={
-            "model": model,
+            "model": cfg["model"],
             "messages": [
                 {
                     "role": "user",
@@ -60,19 +55,29 @@ async def recognize(request: Request, image: UploadFile = File(...)):
     if not image_bytes:
         raise HTTPException(status_code=400, detail="图片为空，请重新选择")
 
-    user_key = request.headers.get("X-Zhipu-Key", "")
+    # BYOK：识别模型与 Key 全部来自访客请求头（未配置时默认智谱 GLM-4V-Flash）
     try:
-        result = _call_glm(image_bytes, user_key)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except (httpx.HTTPError, KeyError):
+        cfg = resolve_config(request, kind="vision", header_prefix="X-Recognize", default_provider="zhipu")
+    except HTTPException:
+        raise
+
+    try:
+        result = _call_vision(image_bytes, cfg)
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        if code in (401, 403):
+            raise HTTPException(status_code=502, detail=f"{cfg['label']} Key 无效或已过期，请在设置页检查后重试")
+        if code == 429:
+            raise HTTPException(status_code=502, detail="模型当前访问量过大，请稍后再试，或到设置页切换识别模型")
+        raise HTTPException(status_code=502, detail=f"识别服务返回异常（{code}），请稍后再试")
+    except httpx.HTTPError:
         raise HTTPException(status_code=502, detail="识别服务暂时不可用，请稍后再试")
+    except KeyError:
+        raise HTTPException(status_code=502, detail="识别服务返回异常，请稍后再试")
     except (json.JSONDecodeError, ValueError):
         # 模型返回非 JSON，重试一次
         try:
-            result = _call_glm(image_bytes, user_key)
-        except RuntimeError as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            result = _call_vision(image_bytes, cfg)
         except Exception:
             raise HTTPException(
                 status_code=502,

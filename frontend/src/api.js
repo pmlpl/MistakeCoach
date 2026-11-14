@@ -1,4 +1,4 @@
-import { getKeys } from './store/keys'
+import { getKeys, modelConfig } from './store/keys'
 
 /** 统一请求封装：非 2xx 时把后端 detail 变成可读错误抛出 */
 async function request(path, options) {
@@ -11,7 +11,8 @@ async function request(path, options) {
   return data
 }
 
-/** 访客自带 Key：随请求头发送（纯 BYOK——服务端不内置任何 Key，见文档 3.6） */
+/** 访客自带 Key：随请求头发送（纯 BYOK——服务端不内置任何 Key，见文档 3.6）。
+ *  X-Zhipu-Key / X-Deepseek-Key 作为旧供应商头的兜底，显式配置走 X-Recognize-* / X-Chat-Key */
 function authHeaders() {
   const { zhipu = '', deepseek = '' } = getKeys()
   const h = {}
@@ -20,28 +21,45 @@ function authHeaders() {
   return h
 }
 
-/** 访客在设置页选择的对话/笔记供应商（deepseek | zhipu） */
-function chatProvider() {
-  return getKeys().chatProvider === 'zhipu' ? 'zhipu' : 'deepseek'
+/** 识别模型请求头（拍题读题，需支持看图的模型） */
+function recognizeHeaders() {
+  const cfg = modelConfig('recognize')
+  return {
+    ...authHeaders(),
+    'X-Recognize-Provider': cfg.provider,
+    'X-Recognize-Model': cfg.model,
+    'X-Recognize-Base': cfg.baseUrl,
+    'X-Recognize-Key': cfg.key,
+  }
+}
+
+/** 对话模型请求头 + 请求体片段（对话与笔记共用） */
+function chatRequestBits() {
+  const cfg = modelConfig('chat')
+  return {
+    headers: { ...authHeaders(), 'X-Chat-Key': cfg.key },
+    chat: { provider: cfg.provider, model: cfg.model, base_url: cfg.baseUrl },
+  }
 }
 
 /** POST /api/recognize：multipart 图片 -> 识别 JSON */
 export function recognizeImage(file) {
   const fd = new FormData()
   fd.append('image', file)
-  return request('/api/recognize', { method: 'POST', body: fd, headers: authHeaders() })
+  return request('/api/recognize', { method: 'POST', body: fd, headers: recognizeHeaders() })
 }
 
 /** POST /api/note：对话记录 -> 错题卡 JSON（6.3） */
 export function noteGenerate(questionText, studentWork, transcript) {
+  const bits = chatRequestBits()
   return request('/api/note', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: { 'Content-Type': 'application/json', ...bits.headers },
     body: JSON.stringify({
       question_text: questionText,
       student_work: studentWork,
       transcript,
-      chat_provider: chatProvider(),
+      chat: bits.chat,
     }),
   })
 }
@@ -57,10 +75,11 @@ export async function chatStream(payload, onDelta, onState) {
   }
   resetTimer()
   try {
+    const bits = chatRequestBits()
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ chat_provider: chatProvider(), ...payload }),
+      headers: { 'Content-Type': 'application/json', ...bits.headers },
+      body: JSON.stringify({ chat: bits.chat, ...payload }),
       signal: controller.signal,
     })
     if (!res.ok) {
