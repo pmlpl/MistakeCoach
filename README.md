@@ -3,8 +3,6 @@ title: MistakeCoach
 emoji: 📓
 colorFrom: amber
 colorTo: yellow
-sdk: docker
-app_port: 7860
 pinned: false
 ---
 
@@ -61,18 +59,17 @@ npm install
 npm run dev
 ```
 
-## 部署（Hugging Face Spaces）
+## 部署（Render 免费版）
 
 单服务部署：FastAPI 同时托管前端构建产物，见 [Dockerfile](Dockerfile)。
 
-1. 在 HF 新建 Space（SDK 选 **Docker**）
-2. Settings → **Secrets** 添加 `ZHIPU_API_KEY`、`DEEPSEEK_API_KEY`（Key 走平台 Secrets，绝不入仓库）
-3. 推送本仓库到 Space：
+1. 代码推送到 GitHub（本仓库直接 push 即可）
+2. [Render](https://render.com) 注册 → **New Web Service** → 连接 GitHub 仓库
+3. Runtime 选 **Docker**（自动读取 Dockerfile），Region 选 Singapore（离国内近）
+4. **Environment** 添加两个变量：`ZHIPU_API_KEY`、`DEEPSEEK_API_KEY`（Key 走平台环境变量，绝不入仓库）
+5. Create → 自动构建部署，得到 `https://<名字>.onrender.com` 公网链接
 
-```bash
-git remote add space https://huggingface.co/spaces/<你的用户名>/mistakecoach
-git push space main
-```
+> 免费版 15 分钟无访问会休眠：演示前先自己打开页面预热一次（首次加载约 50 秒）。
 
 ## 明确不做（后续规划）
 

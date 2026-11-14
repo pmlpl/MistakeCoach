@@ -19,4 +19,5 @@ COPY backend/ .
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
 EXPOSE 7860
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+# 端口读环境变量：Render 会注入 PORT，HF Spaces / 本地默认 7860
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]
