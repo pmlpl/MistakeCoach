@@ -124,9 +124,21 @@ function onCardTouchStart(e, key) {
   touchStartXY = { x: e.touches[0].clientX, y: e.touches[0].clientY }
 }
 function onCardTouchMove(e) {
-  const dx = Math.abs(e.touches[0].clientX - touchStartXY.x)
-  const dy = Math.abs(e.touches[0].clientY - touchStartXY.y)
-  if (dy > 8 && dy > dx) pressedKey.value = '' // 纵向滚屏，取消半抽
+  const t = e.touches[0]
+  const dx = Math.abs(t.clientX - touchStartXY.x)
+  const dy = Math.abs(t.clientY - touchStartXY.y)
+  if (dy > 8 && dy > dx) {
+    pressedKey.value = '' // 纵向滚屏，取消半抽，把滚动还给页面
+    return
+  }
+  // touch 事件的 target 固定在起点卡上，滑过的卡收不到事件——按手指坐标反查所在卡
+  const el = document.elementFromPoint(t.clientX, t.clientY)?.closest('.pcard-wrap')
+  const key = el?.dataset.peekKey
+  if (key && el?.closest('.pile')?.classList.contains('spread')) {
+    pressedKey.value = key
+  } else {
+    pressedKey.value = '' // 滑到空白/未推开的堆，收回落起
+  }
 }
 function onCardTouchEnd() {
   pressedKey.value = ''
@@ -293,6 +305,7 @@ function clearAll() {
               :key="c.id + g.key"
               class="pcard-wrap"
               :class="{ peek: pressedKey === c.id + g.key }"
+              :data-peek-key="c.id + g.key"
               :style="wrapStyle(g, idx)"
               @click.stop="drawCard(c)"
               @touchstart="onCardTouchStart($event, c.id + g.key)"
