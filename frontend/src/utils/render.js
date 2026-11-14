@@ -1,4 +1,4 @@
-/** 统一的「文本 + 数学公式」混排渲染（对话气泡 / 核验预览 / 错题卡共用） */
+/** 统一的「文本 + 数学公式 + SVG 绘图块」混排渲染（对话气泡 / 核验预览 / 错题卡共用） */
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -6,17 +6,34 @@ export function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/** SVG 净化：AI 生成的绘图只保留纯图形，剥掉脚本与事件属性 */
+function sanitizeSvg(code) {
+  return code
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(html|body|iframe|object|embed)[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript:/gi, '')
+}
+
 /**
  * 混排渲染：先归一模型可能输出的多种公式定界符（\(…\) 与 \[…\] → $…$ / $$…$$），
  * 再分段走 KaTeX；**加粗**转 strong；换行/加粗只处理纯文本段——
  * 必须在 KaTeX 渲染之外做，否则 <br> 会混进 KaTeX 生成的 SVG path 属性里打碎公式。
+ * ```svg 代码块：抽出来净化后原样回填（占位符避开转义与公式分段）；
+ * 流式中未闭合的块整段隐藏为「图形绘制中…」，闭合瞬间变成图。
  */
 export function renderMixed(text) {
   if (!text) return ''
+  const svgs = []
   const unified = text
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, g) => `$${g}$`)
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, g) => `$$${g}$$`)
-  return unified
+    .replace(/```svg\s*\n([\s\S]*?)```/gi, (_, code) => {
+      svgs.push(sanitizeSvg(code.trim()))
+      return `\u0000SVG${svgs.length - 1}\u0000`
+    })
+    .replace(/```svg[^\n]*\n[\s\S]*$/i, '（图形绘制中…）') // 流式：未闭合的块先不露代码
+  const out = unified
     .split(/\$\$([\s\S]+?)\$\$/g)
     .map((seg, i) => {
       if (i % 2) {
@@ -33,4 +50,5 @@ export function renderMixed(text) {
         .join('')
     })
     .join('')
+  return out.replace(/\u0000SVG(\d+)\u0000/g, (_, i) => `<div class="ai-svg">${svgs[+i]}</div>`)
 }

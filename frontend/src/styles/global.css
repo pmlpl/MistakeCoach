@@ -19,6 +19,21 @@
   box-sizing: border-box;
 }
 
+/* AI 绘图块（```svg 代码块渲染成图，v-html 内容须放全局） */
+.ai-svg {
+  margin: 10px 0;
+  text-align: center;
+}
+
+.ai-svg svg {
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
 html,
 body {
   margin: 0;
