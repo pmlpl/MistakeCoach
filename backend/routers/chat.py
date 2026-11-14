@@ -21,7 +21,7 @@ PROVIDERS = {
     },
     "zhipu": {
         "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "default_model": "glm-4-flash",
+        "default_model": "glm-4.7-flash",
         "env_model": "ZHIPU_CHAT_MODEL",
         "key_header": "X-Zhipu-Key",
         "label": "智谱 GLM",
@@ -188,6 +188,8 @@ async def chat(req: ChatRequest, request: Request):
         await client.aclose()
         if up.status_code in (401, 403):
             raise HTTPException(status_code=502, detail=f"{provider['label']} Key 无效或已过期，请在设置页检查后重试")
+        if up.status_code == 429:
+            raise HTTPException(status_code=502, detail="免费模型当前访问量过大，请稍后再试，或到设置页切换对话模型")
         raise HTTPException(status_code=502, detail=f"对话服务返回异常（{up.status_code}），请稍后再试")
 
     return StreamingResponse(
