@@ -2,7 +2,7 @@
 // M2 对话页：SSE 气泡流 + 双模式切换 + KaTeX 渲染（FR-4/5/6；7.5 三触点模式认知）
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { closeToast, showLoadingToast, showToast } from 'vant'
+import { closeToast, showImagePreview, showLoadingToast, showToast } from 'vant'
 import { chatStream, noteGenerate } from '../api'
 import { renderMixed } from '../utils/render'
 import { session } from '../store/session'
@@ -160,6 +160,14 @@ onMounted(() => {
       <!-- 题目 + 我的错答参考卡：手机端点开才显示，桌面端常驻左栏（3.5） -->
       <aside class="ref-card" :class="{ open: showRef }">
         <p class="ref-label">题目</p>
+        <!-- 原图缩略：图形题 AI 只能文字转述，学生对照原卷确认 -->
+        <img
+          v-if="session.imageDataUrl"
+          class="ref-photo"
+          :src="session.imageDataUrl"
+          alt="原题照片"
+          @click="showImagePreview({ images: [session.imageDataUrl], closeable: true, closeOnPopstate: true, showIndex: false })"
+        />
         <div class="ref-body" v-html="refQuestionHtml"></div>
         <template v-if="session.studentWork">
           <p class="ref-label">我的错答</p>
@@ -271,6 +279,18 @@ onMounted(() => {
   margin: 0 0 4px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.ref-photo {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: zoom-in;
 }
 
 .ref-body {
