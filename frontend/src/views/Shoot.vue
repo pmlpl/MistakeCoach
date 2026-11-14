@@ -150,8 +150,13 @@ function onCropUp() {
   const b = cropBox.value
   if (!b || b.w < 40 || b.h < 40) {
     cropBox.value = null // 太小视为误触
-    return
   }
+  // 选好的框保留不动，等用户点「确认裁剪」才生效；不满意可直接重新拖框覆盖
+}
+
+function confirmCrop() {
+  const b = cropBox.value
+  if (!b) return
   const img = imgEl.value
   const natW = img.naturalWidth
   const natH = img.naturalHeight
@@ -178,7 +183,7 @@ function onCropUp() {
     previewUrl.value = URL.createObjectURL(blob)
     cropMode.value = false
     cropBox.value = null
-    showToast('已按圈选裁剪，点「开始识别」继续')
+    showToast('已按圈选裁剪，可直接开始识别')
   }, 'image/jpeg', 0.92)
 }
 </script>
@@ -228,12 +233,25 @@ function onCropUp() {
             <div v-if="cropBox" class="crop-box" :style="boxStyle"></div>
           </div>
           <p class="preview-hint">
-            {{ cropMode ? '在图上拖一个框，框住要问的那道题' : '可以先圈出题目，也可以直接开始识别' }}
+            {{
+              cropMode
+                ? cropBox && !cropping
+                  ? '满意就点「确认裁剪」，不满意直接重新拖框'
+                  : '在图上拖一个框，框住要问的那道题'
+                : '可以先圈出题目，也可以直接开始识别'
+            }}
           </p>
           <div class="preview-actions">
-            <button class="big-btn" :disabled="loading" @click="startRecognize">开始识别</button>
-            <button class="big-btn secondary" @click="toggleCrop">{{ cropMode ? '取消圈选' : '圈出题目' }}</button>
-            <button class="text-btn" @click="clearPreview">重选一张</button>
+            <template v-if="cropMode && cropBox && !cropping">
+              <!-- 框已选好，等确认 -->
+              <button class="big-btn" @click="confirmCrop">确认裁剪</button>
+              <button class="big-btn secondary" @click="cropBox = null">重新框选</button>
+            </template>
+            <template v-else>
+              <button class="big-btn" :disabled="loading" @click="startRecognize">开始识别</button>
+              <button class="big-btn secondary" @click="toggleCrop">{{ cropMode ? '取消圈选' : '圈出题目' }}</button>
+              <button class="text-btn" @click="clearPreview">重选一张</button>
+            </template>
           </div>
         </div>
       </template>
