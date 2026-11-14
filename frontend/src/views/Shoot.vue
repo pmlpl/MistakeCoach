@@ -77,7 +77,7 @@ async function recognize(file) {
     router.push('/verify')
   } catch (err) {
     previewUrl.value = '' // 失败回到选择入口，允许换一张
-    showToast(err.message)
+    showToast({ message: `识别失败：${err.message}`, duration: 5000 }) // 停留久一点，方便看清原因
   } finally {
     loading.value = false
     closeToast()
