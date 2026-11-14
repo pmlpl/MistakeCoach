@@ -127,8 +127,8 @@ function onCardTouchMove(e) {
   const t = e.touches[0]
   const dx = Math.abs(t.clientX - touchStartXY.x)
   const dy = Math.abs(t.clientY - touchStartXY.y)
-  if (dy > 8 && dy > dx) {
-    pressedKey.value = '' // 纵向滚屏，取消半抽，把滚动还给页面
+  if (dy > 12 && dy > dx * 1.5) {
+    pressedKey.value = '' // 明确的纵向滚屏才取消，快速横滑的轻微抖动不影响
     return
   }
   // touch 事件的 target 固定在起点卡上，滑过的卡收不到事件——按手指坐标反查所在卡
@@ -539,14 +539,19 @@ function clearAll() {
 }
 
 /* 悬停半抽：桌面端；按住半抽：手机端模拟 hover 预览（3.3） */
+/* 浮起跟手：清掉推开用的级联 delay，用更快的过渡（否则滑太快时动画还没开始） */
 @media (hover: hover) and (min-width: 768px) {
   .pile.spread .pcard-wrap:hover {
     --lift: -16px;
+    transition-delay: 0ms;
+    transition-duration: 0.15s;
   }
 }
 
 .pile.spread .pcard-wrap.peek {
   --lift: -16px;
+  transition-delay: 0ms;
+  transition-duration: 0.15s;
 }
 
 .pile.spread .pcard-wrap.peek .pcard {
