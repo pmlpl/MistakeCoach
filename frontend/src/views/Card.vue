@@ -31,6 +31,7 @@ const wrongHtml = computed(() => (card.value ? renderMixed(card.value.student_wr
 const solutionSteps = computed(() => (card.value ? card.value.correct_solution.map((s) => renderMixed(s)) : []))
 const variantHtml = computed(() => (card.value ? renderMixed(card.value.variant_question) : ''))
 const variantAnswerHtml = computed(() => (card.value ? renderMixed(card.value.variant_answer) : ''))
+const analysisHtml = computed(() => (card.value ? renderMixed(card.value.wrong_reason?.analysis || '') : ''))
 const showVariantAnswer = ref(false)
 
 // 导出长图：等字体与公式就绪后再抓 DOM（3.2 防抖规则）
@@ -105,7 +106,7 @@ function saveToBook() {
           <p class="sec-title">错因</p>
           <div class="reason">
             <span class="pill">{{ card.wrong_reason.category }}</span>
-            <p class="analysis">{{ card.wrong_reason.analysis }}</p>
+            <p class="analysis" v-html="analysisHtml"></p>
           </div>
         </section>
 
