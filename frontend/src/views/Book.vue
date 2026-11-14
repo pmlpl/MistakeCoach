@@ -246,7 +246,6 @@ function clearAll() {
             </button>
           </div>
         </div>
-        <p class="pile-hint">点牌堆推开 · 按住/悬停半抽 · 点单张抽出详看 · 点空白收拢</p>
       </template>
 
       <!-- 桌面表格管理视图（3.5） -->
@@ -568,14 +567,6 @@ function clearAll() {
 .more-date {
   font-size: 11px;
   color: var(--text-secondary);
-}
-
-.pile-hint {
-  margin: 4px 0 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-secondary);
-  opacity: 0.7;
 }
 
 /* ---- 桌面表格视图（3.5） ---- */
