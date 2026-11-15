@@ -7,7 +7,7 @@ let stuck = 0 // 连续"不知道/不会"计数（硬规则：连续 2 轮 hint_
 
 export const chat = reactive({
   messages: [], // {id, role: 'user'|'assistant'|'notice', content}
-  state: { phase: 'P1', hint_level: 0, mode: 'guide' },
+  state: { phase: 'P1', hint_level: 0, mode: 'guide', modeManual: false },
   sending: false,
 })
 
@@ -124,15 +124,17 @@ export function removeMessage(id) {
 
 export function resetChat() {
   chat.messages.splice(0)
-  chat.state = { phase: 'P1', hint_level: 0, mode: 'guide' }
+  chat.state = { phase: 'P1', hint_level: 0, mode: 'guide', modeManual: false }
   chat.sending = false
   stuck = 0
 }
 
-/** 模式切换：手动与关键词自动切换行为一致（7.5），插入切换说明气泡 */
+/** 模式切换：手动与关键词自动切换行为一致（7.5），插入切换说明气泡。
+ *  modeManual 置真：用户（点分段器或说关键词）选定的模式优先于模型末尾标记，防回滚 */
 export function setMode(mode) {
   if (mode === chat.state.mode || !['guide', 'direct'].includes(mode)) return
   chat.state.mode = mode
+  chat.state.modeManual = true
   stuck = 0
   pushMessage(
     'notice',
@@ -160,7 +162,9 @@ export function applyHardRules(text) {
   }
 }
 
-/** 后端解析回复末尾标记得到的新状态，覆盖本地 state（非法字段沿用原值） */
+/** 后端解析回复末尾标记得到的新状态，覆盖本地 state（非法字段沿用原值）。
+ *  mode 例外：用户手动选过模式（modeManual）时以手动选择为准——模型标记若仍输出
+ *  旧 MODE（如切讲解后模型惯性写 MODE:guide）不得把用户的模式改回去 */
 export function applyServerState(state) {
   if (!state) return
   chat.state = {
@@ -168,7 +172,11 @@ export function applyServerState(state) {
     hint_level: Number.isFinite(+state.hint_level)
       ? Math.min(4, Math.max(0, +state.hint_level))
       : chat.state.hint_level,
-    mode: ['guide', 'direct'].includes(state.mode) ? state.mode : chat.state.mode,
+    mode:
+      chat.state.modeManual || !['guide', 'direct'].includes(state.mode)
+        ? chat.state.mode
+        : state.mode,
+    modeManual: chat.state.modeManual,
   }
 }
 

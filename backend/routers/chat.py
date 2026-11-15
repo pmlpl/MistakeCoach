@@ -162,13 +162,19 @@ async def chat(req: ChatRequest, request: Request):
     messages = merged
 
     state_directive_text = (
-        f"\n\n【当前状态指令】phase={req.state.phase}，hint_level=L{req.state.hint_level}，mode={req.state.mode}。"
+        f"【当前状态指令】phase={req.state.phase}，hint_level=L{req.state.hint_level}，mode={req.state.mode}。"
         "按 system prompt 中该阶段、该梯度、该模式的规则回复，并在回复末尾输出状态标记。"
     )
-    if messages and messages[-1]["role"] != "system":
-        messages[-1]["content"] += state_directive_text
+    if messages and messages[-1]["role"] == "user":
+        # 正常一问一答：指令内联追加到学生最新消息末尾（供应商要求消息严格交替，且不影响前缀缓存）
+        messages[-1]["content"] += "\n\n" + state_directive_text
     else:
-        messages.append({"role": "user", "content": state_directive_text.strip()})
+        # 末条是 assistant（如手动切换模式后的主动回复，此时没有新学生消息）或尚无对话历史：
+        # 指令必须作为独立 user 消息收尾——若塞进 assistant 消息里，请求以 assistant 结尾，
+        # 模型会当成"续写自己的旧回复"，把埋在自己话里的指令当噪声无视，继续按旧模式提问
+        messages.append(
+            {"role": "user", "content": state_directive_text + "这是新一轮回复请求，请立即输出一条全新回复，不要续写上面的内容。"}
+        )
 
     client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
     up_req = client.build_request(
