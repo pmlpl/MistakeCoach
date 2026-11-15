@@ -34,6 +34,38 @@
   padding: 4px;
 }
 
+/* 公式自适应（KaTeX 公式不可折行）：超宽时滚动区限定在公式自身，周围文字照常换行，
+   不再把整条气泡/卡片撑成横向滚动；v-html 渲染内容必须放全局样式。
+   块级公式 cursor 提示可点击放大（对话页全屏层）。 */
+.katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.katex-block {
+  margin: 6px 0;
+  cursor: zoom-in;
+}
+
+/* 细圆角滚动条：一眼看出公式可以横向滑 */
+.katex::-webkit-scrollbar,
+.katex-block::-webkit-scrollbar {
+  height: 4px;
+}
+
+.katex::-webkit-scrollbar-thumb,
+.katex-block::-webkit-scrollbar-thumb {
+  background: rgba(161, 98, 7, 0.35);
+  border-radius: 999px;
+}
+
+.katex::-webkit-scrollbar-track,
+.katex-block::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 html,
 body {
   margin: 0;

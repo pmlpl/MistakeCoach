@@ -36,6 +36,16 @@ const thinking = computed(() => {
   return !last || (last.role === 'assistant' && !last.content)
 })
 
+// 块级公式点击放大：事件委托捕获 v-html 内容里的点击，把公式搬进全屏浮层（手机横屏也能看全长）
+const showFull = ref(false)
+const fullFormula = ref('')
+function openFormula(e) {
+  const block = e.target.closest('.katex-block')
+  if (!block) return
+  fullFormula.value = block.innerHTML
+  showFull.value = true
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
@@ -184,7 +194,7 @@ onMounted(() => {
         </template>
       </aside>
 
-      <div ref="listEl" class="bubble-list">
+      <div ref="listEl" class="bubble-list" @click="openFormula">
         <div v-for="m in chat.messages" :key="m.id" class="row" :class="m.role">
           <div v-if="m.role === 'notice'" class="bubble notice">{{ m.content }}</div>
           <div v-else-if="m.role === 'user'" class="bubble user">{{ m.content }}</div>
@@ -204,6 +214,19 @@ onMounted(() => {
       />
       <van-button type="primary" :disabled="chat.sending || !input.trim()" @click="onSend">发送</van-button>
     </div>
+
+    <!-- 块级公式全屏放大层：点遮罩或 × 关闭；容器可双向滚动，手机横屏能看全超长公式 -->
+    <transition name="fade">
+      <div v-if="showFull" class="formula-mask" @click="showFull = false">
+        <div class="formula-full" @click.stop>
+          <div class="formula-full-head">
+            <span>公式放大 · 手机横屏看得更全</span>
+            <van-icon name="cross" @click="showFull = false" />
+          </div>
+          <div class="formula-full-body" v-html="fullFormula"></div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -355,11 +378,6 @@ onMounted(() => {
   border-bottom-left-radius: 4px;
 }
 
-.katex-block {
-  margin: 6px 0;
-  overflow-x: auto;
-}
-
 .bubble.notice {
   max-width: 94%;
   background: var(--highlight);
@@ -375,6 +393,63 @@ onMounted(() => {
   text-align: center;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* 块级公式全屏放大层（公式本体样式走 global.css 的 .katex 规则） */
+.formula-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(68, 64, 60, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.formula-full {
+  background: #fff;
+  border-radius: var(--radius);
+  width: min(720px, 94vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.formula-full-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.formula-full-head .van-icon {
+  font-size: 18px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.formula-full-body {
+  overflow: auto;
+  padding: 18px 16px;
+  font-size: 19px; /* 比气泡 15px 放大约 1.27 倍 */
+  line-height: 1.9;
+}
+
+/* 全屏层淡入淡出 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .input-bar {
