@@ -115,27 +115,28 @@ function drawCard(card, e) {
   drawnId.value = card.id
 }
 
-// FLIP 过渡（JS hooks，:css=false）：抽出=从牌堆那张牌的位置飞入中央；放回=飞回原位缩小淡出
+// 抽出/放回过渡（WAAPI 三段路径）：抽出=从两张牌的缝隙里先向上拔出、再飞向中央放大；
+// 放回=先落回缝隙上方、再插回原位。页面不做暗遮罩，像在桌面上抽牌
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function onOverlayEnter(el) {
   const from = flyFrom.value
-  if (!from || reducedMotion) {
-    el.style.opacity = '0'
-    requestAnimationFrame(() => {
-      el.style.transition = 'opacity 0.15s ease'
-      el.style.opacity = ''
-    })
-    return
-  }
+  if (!from || reducedMotion) return
   const to = el.getBoundingClientRect()
   const dx = from.left + from.width / 2 - (to.left + to.width / 2)
   const dy = from.top + from.height / 2 - (to.top + to.height / 2)
-  el.style.transition = 'none'
-  el.style.transform = `translate(${dx}px, ${dy}px) scale(${from.width / to.width})`
-  requestAnimationFrame(() => {
-    el.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)'
-    el.style.transform = ''
-  })
+  const s = from.width / to.width
+  el.animate(
+    [
+      { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
+      {
+        transform: `translate(${dx}px, ${dy - 36}px) scale(${s * 1.06})`,
+        offset: 0.32,
+        easing: 'cubic-bezier(0.3, 0, 0.7, 0.4)',
+      },
+      { transform: 'none' },
+    ],
+    { duration: 420, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+  )
 }
 
 function onOverlayLeave(el, done) {
@@ -147,19 +148,23 @@ function onOverlayLeave(el, done) {
   const from = el.getBoundingClientRect()
   const dx = to.left + to.width / 2 - (from.left + from.width / 2)
   const dy = to.top + to.height / 2 - (from.top + from.height / 2)
-  el.style.transition = 'transform 0.28s cubic-bezier(0.4, 0, 0.7, 0.2), opacity 0.28s ease'
-  el.style.transform = `translate(${dx}px, ${dy}px) scale(${to.width / from.width})`
-  el.style.opacity = '0'
-  const timer = setTimeout(done, 350) // transitionend 兜底（属性中断时不触发）
-  el.addEventListener(
-    'transitionend',
-    () => {
-      clearTimeout(timer)
-      done()
-    },
-    { once: true },
+  const s = to.width / from.width
+  const anim = el.animate(
+    [
+      { transform: 'none' },
+      {
+        transform: `translate(${dx}px, ${dy - 36}px) scale(${s * 1.06})`,
+        offset: 0.68,
+        easing: 'cubic-bezier(0.3, 0, 0.7, 0.4)',
+      },
+      { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 1 },
+    ],
+    { duration: 340, easing: 'ease-in' },
   )
+  anim.onfinish = done
+  anim.oncancel = done
 }
+
 // 只收回浮层中的卡，牌堆保持推开态（方便继续浏览其他牌）
 function closeOverlay() {
   drawnId.value = ''
@@ -805,10 +810,10 @@ function clearAll() {
 }
 
 /* ---- 完全抽出浮层（3.3）：居中放大展示详细内容 ---- */
+/* 不做暗遮罩：背景全透明，页面保持原亮度，靠浮层自身阴影悬浮（点击浮层外空白=放回） */
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(68, 64, 60, 0.45);
   z-index: 100;
   display: flex;
   align-items: center;
