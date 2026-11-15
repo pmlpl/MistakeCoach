@@ -6,6 +6,7 @@ import { closeToast, showLoadingToast, showToast } from 'vant'
 import html2canvas from 'html2canvas'
 import { renderMixed } from '../utils/render'
 import { session } from '../store/session'
+import { listDrafts } from '../store/chat'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +27,14 @@ onMounted(() => {
 })
 
 const dateText = computed(() => (card.value?.created_at || '').slice(0, 10))
+
+// 继续这题的对话（与错题本浮层同源逻辑）：卡上记着 sessionId 且对应会话桶还在才显示入口
+const hasChat = computed(
+  () => !!card.value?.sessionId && listDrafts().some((d) => d.sid === card.value.sessionId),
+)
+function goChat() {
+  router.push({ name: 'chat', query: { sid: card.value.sessionId } })
+}
 const questionHtml = computed(() => (card.value ? renderMixed(card.value.question) : ''))
 const wrongHtml = computed(() => (card.value ? renderMixed(card.value.student_wrong_answer) : ''))
 const solutionSteps = computed(() => (card.value ? card.value.correct_solution.map((s) => renderMixed(s)) : []))
@@ -144,6 +153,7 @@ function saveToBook() {
       <van-empty v-else description="卡片不存在" />
 
       <div v-if="card" class="actions">
+        <van-button v-if="hasChat" block plain type="primary" @click="goChat">继续这题的对话</van-button>
         <van-button type="primary" block :loading="exporting" @click="exportPng">保存长图</van-button>
         <van-button v-if="!saved" block plain type="primary" @click="saveToBook">存入错题本</van-button>
         <van-button v-else block plain @click="router.push('/book')">去错题本看看</van-button>
