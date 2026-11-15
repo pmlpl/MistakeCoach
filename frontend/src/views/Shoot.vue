@@ -198,7 +198,14 @@ function confirmCrop() {
 
 <template>
   <div class="page shoot">
-    <van-nav-bar title="拍题" fixed placeholder>
+    <van-nav-bar fixed placeholder>
+      <template #left>
+        <!-- 品牌栏：logo + 名称（首页顶栏即品牌位，子页面仍用文字标题） -->
+        <div class="brand" @click="router.push('/')">
+          <img class="brand-logo" src="/logo.svg" alt="MistakeCoach logo" />
+          <span class="brand-name">MistakeCoach</span>
+        </div>
+      </template>
       <template #right>
         <div class="nav-actions">
           <!-- 错题本、设置入口 = 拍题页顶栏图标（3.4） -->
@@ -312,6 +319,26 @@ function confirmCrop() {
   display: flex;
   align-items: center;
   gap: 18px;
+}
+
+/* 品牌栏（logo.svg 同源 favicon） */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.brand-logo {
+  width: 26px;
+  height: 26px;
+}
+
+.brand-name {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #92400e;
 }
 
 .content {

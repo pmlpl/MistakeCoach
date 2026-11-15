@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FCD34D"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <!-- 底：手账 amber 渐变圆角方块 -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <!-- 错题本：纸白封面 + 深棕描边 -->
+  <rect x="15" y="13" width="34" height="38" rx="6" fill="#FFFDF6" stroke="#92400E" stroke-width="2.5"/>
+  <!-- 装订书脊线 -->
+  <line x1="23" y1="16" x2="23" y2="48" stroke="#FDE68A" stroke-width="3" stroke-linecap="round"/>
+  <!-- 荧光对勾：让每道错题都有交代 -->
+  <path d="M28 35 L34.5 41.5 L43.5 26.5" fill="none" stroke="#92400E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
