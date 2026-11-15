@@ -2,7 +2,7 @@
 // 错题本（FR-9/12/13）：牌堆浏览（3.3）+ 维度切换 + 桌面表格视图 + 未完成对话入口
 // 交互模型（3.3）：收拢态无悬停效果 → 点击牌堆向右推开 → 推开后悬停半抽预览 →
 //                点击单张完全抽出（居中放大浮层展示详细内容）→ 点空白/放回收拢
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { syncCards } from '../api'
@@ -32,10 +32,6 @@ const viewMode = ref(isDesktop.value ? 'table' : 'pile') // 桌面默认表格�
 function onResize() {
   isDesktop.value = window.matchMedia('(min-width: 768px)').matches
 }
-onMounted(() => {
-  load()
-  window.addEventListener('resize', onResize)
-})
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
 function load() {
@@ -185,8 +181,9 @@ function dateOf(card) {
 }
 
 // 云端同步：本地全量上传（云端按卡 id 幂等 upsert），云端有而本地没有的合并回来。
-// 合并语义（非镜像）：本地删除不传播——两台设备场景下镜像会误删还没同步过的卡
-async function doSync() {
+// 合并语义（非镜像）：本地删除不传播——两台设备场景下镜像会误删还没同步过的卡。
+// silent=登录后自动触发：成功不弹提示、失败静默（手动点按钮才详细反馈）
+async function doSync(silent = false) {
   if (syncing.value || !user.value) return
   syncing.value = true
   try {
@@ -204,13 +201,24 @@ async function doSync() {
       localStorage.setItem('mc_cards', JSON.stringify(local))
       load()
     }
-    showToast(`同步完成：本机 ${local.length} 张，从云端补回 ${added} 张`)
+    if (!silent) showToast(`同步完成：本机 ${local.length} 张，从云端补回 ${added} 张`)
   } catch (e) {
-    showToast(e.message || '同步失败，请稍后再试')
+    if (!silent) showToast(e.message || '同步失败，请稍后再试')
   } finally {
     syncing.value = false
   }
 }
+
+// 登录即自动同步（让"登录 = 账号数据"成立，不用手动点按钮）：
+// onMounted 兜底"已登录刷新页面"，watch 兜底"在本页新登录/退出后再登录"
+onMounted(() => {
+  load()
+  window.addEventListener('resize', onResize)
+  if (user.value) doSync(true)
+})
+watch(user, (u) => {
+  if (u) doSync(true)
+})
 
 function clearAll() {
   showConfirmDialog({
@@ -266,7 +274,7 @@ function clearAll() {
             class="sync-btn"
             :loading="syncing"
             loading-text="同步中…"
-            @click="doSync"
+            @click="doSync()"
           >同步云端</van-button>
           <button v-if="cards.length" class="mini-btn danger" @click="clearAll">清空</button>
         </div>
