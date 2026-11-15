@@ -16,7 +16,7 @@ def require_user(authorization: str | None = Header(default=None)) -> str:
     """FastAPI 依赖：校验 Bearer JWT，返回 Supabase 用户 id；未登录/无效 → 401"""
     payload = verify_token(authorization)
     if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=401, detail="请先登录后再同步")
+        raise HTTPException(status_code=401, detail="登录状态已过期，请到设置页退出后重新登录再同步")
     return payload["sub"]
 
 

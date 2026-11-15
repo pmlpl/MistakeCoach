@@ -37,8 +37,19 @@ export async function signOut() {
   await supabase.auth.signOut()
 }
 
-/** 当前登录用户的 access token（调后端同步接口用）；未登录返回 null */
+/** 当前登录用户的 access token（调后端同步接口用）；未登录返回 null。
+ *  access token 只有 1 小时有效期：页面切后台时 supabase-js 的自动续期定时器会被浏览器
+ *  节流暂停，回到页面后 token 可能已过期——所以在取出前主动检查并 refreshSession */
 export async function accessToken() {
-  const { data } = await supabase.auth.getSession()
-  return data.session?.access_token || null
+  let { data } = await supabase.auth.getSession()
+  let session = data.session
+  if (session) {
+    const expiresAt = session.expires_at || 0 // 秒级时间戳
+    if (expiresAt < Math.floor(Date.now() / 1000) + 30) {
+      // 已过期或 30 秒内将过期：用 refresh_token 换新 token（refreshSession 失败则沿用旧值，让后端报错）
+      const { data: refreshed } = await supabase.auth.refreshSession()
+      session = refreshed.session || session
+    }
+  }
+  return session?.access_token || null
 }
