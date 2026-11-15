@@ -115,8 +115,8 @@ function drawCard(card, e) {
   drawnId.value = card.id
 }
 
-// 抽出/放回过渡（WAAPI 三段路径）：抽出=从两张牌的缝隙里先向上拔出、再飞向中央放大；
-// 放回=先落回缝隙上方、再插回原位。页面不做暗遮罩，像在桌面上抽牌
+// 抽出/放回过渡（WAAPI 三段路径）：抽出=牌朝屏幕中央方向横滑 35% 路程并捻转 10deg
+// （旋转方向跟随横移方向，像手指捻出），再飞向中央放大转正；放回反向。页面不做暗遮罩
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 function onOverlayEnter(el) {
   const from = flyFrom.value
@@ -125,11 +125,12 @@ function onOverlayEnter(el) {
   const dx = from.left + from.width / 2 - (to.left + to.width / 2)
   const dy = from.top + from.height / 2 - (to.top + to.height / 2)
   const s = from.width / to.width
+  const rot = dx > 0 ? -10 : 10
   el.animate(
     [
       { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
       {
-        transform: `translate(${dx}px, ${dy - 56}px) scale(${s * 1.08})`,
+        transform: `translate(${dx * 0.65}px, ${dy - 10}px) scale(${s * 1.06}) rotate(${rot}deg)`,
         offset: 0.4,
         easing: 'cubic-bezier(0.45, 0, 0.55, 1)',
       },
@@ -149,11 +150,12 @@ function onOverlayLeave(el, done) {
   const dx = to.left + to.width / 2 - (from.left + from.width / 2)
   const dy = to.top + to.height / 2 - (from.top + from.height / 2)
   const s = to.width / from.width
+  const rot = dx > 0 ? -10 : 10
   const anim = el.animate(
     [
       { transform: 'none' },
       {
-        transform: `translate(${dx}px, ${dy - 56}px) scale(${s * 1.08})`,
+        transform: `translate(${dx * 0.65}px, ${dy - 10}px) scale(${s * 1.08}) rotate(${rot}deg)`,
         offset: 0.68,
         easing: 'cubic-bezier(0.45, 0, 0.55, 1)',
       },
