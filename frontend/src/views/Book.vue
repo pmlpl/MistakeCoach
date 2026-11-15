@@ -101,8 +101,10 @@ function toggleSpread(key) {
   drawnId.value = ''
 }
 // 两段式（3.3）：牌堆收拢时点牌=先推开；已推开后点牌=完全抽出（居中浮层）
-// 抽出时记下被点牌的位置：FLIP 过渡的飞入起点 / 放回时的飞回终点
+// 抽出时记下被点牌的位置与左右邻牌：FLIP 的飞入起点 / 放回时的飞回终点与让位对象
 const flyFrom = ref(null)
+const flyPrevId = ref('')
+const flyNextId = ref('')
 function drawCard(card, e) {
   const g = groups.value.find((g) => g.visible.some((c) => c.id === card.id))
   const key = g?.key ?? ''
@@ -111,6 +113,9 @@ function drawCard(card, e) {
     drawnId.value = ''
     return
   }
+  const i = g.visible.findIndex((c) => c.id === card.id)
+  flyPrevId.value = g.visible[i - 1]?.id || ''
+  flyNextId.value = g.visible[i + 1]?.id || ''
   flyFrom.value = e.currentTarget.getBoundingClientRect()
   drawnId.value = card.id
 }
@@ -163,8 +168,17 @@ function onOverlayLeave(el, done) {
     ],
     { duration: 440, easing: 'ease-in' },
   )
-  anim.onfinish = done
-  anim.oncancel = done
+  anim.onfinish = () => {
+    done()
+    // 牌已塞回缝隙：清让位 → 左右邻牌回弹合拢，原位牌淡入，一起把它"夹住"
+    flyPrevId.value = ''
+    flyNextId.value = ''
+  }
+  anim.oncancel = () => {
+    done()
+    flyPrevId.value = ''
+    flyNextId.value = ''
+  }
 }
 
 // 只收回浮层中的卡，牌堆保持推开态（方便继续浏览其他牌）
@@ -189,8 +203,9 @@ function goCard(card) {
   router.push(`/card/${card.id}`)
 }
 
-// 牌位姿：收拢=小错位叠放；推开=横向铺开（卡宽与间距随屏幕/张数自适应，顶牌先动逐张错开 22ms）
-function wrapStyle(group, idx) {
+// 牌位姿：收拢=小错位叠放；推开=横向铺开（卡宽与间距随屏幕/张数自适应，顶牌先动逐张错开 22ms）。
+// 放回让位：抽出的牌要塞回缝隙，左右邻牌先拨开 18px（--way），插回后清空回弹合拢
+function wrapStyle(group, idx, id = '') {
   const n = group.visible.length
   if (!spreadKey.value || spreadKey.value !== group.key) {
     // 收拢也级联（顶牌先回）：收回与推开对称，都有逐张归位动画
@@ -199,7 +214,15 @@ function wrapStyle(group, idx) {
   const cardW = isDesktop.value ? 150 : 118
   const pileW = Math.min(760, window.innerWidth - 48)
   const gap = Math.min(isDesktop.value ? 64 : 36, Math.max(isDesktop.value ? 24 : 16, (pileW - cardW) / Math.max(1, n - 1)))
-  return { '--tx': `${idx * gap}px`, '--ty': '0px', '--delay': `${(n - 1 - idx) * 22}ms`, zIndex: idx + 1 }
+  const style = { '--tx': `${idx * gap}px`, '--ty': '0px', '--delay': `${(n - 1 - idx) * 22}ms`, zIndex: idx + 1 }
+  if (id && id === flyPrevId.value) {
+    style['--way'] = '-18px'
+    style['--delay'] = '0ms'
+  } else if (id && id === flyNextId.value) {
+    style['--way'] = '18px'
+    style['--delay'] = '0ms'
+  }
+  return style
 }
 
 // 手机端"按住半抽"：按住卡牌立即浮起预览（模拟桌面 hover）；纵向滑动页面时取消
@@ -355,7 +378,7 @@ function clearAll() {
               class="pcard-wrap"
               :class="{ peek: pressedKey === c.id + g.key, drawn: drawnId === c.id }"
               :data-peek-key="c.id + g.key"
-              :style="wrapStyle(g, idx)"
+              :style="wrapStyle(g, idx, c.id)"
               @click.stop="drawCard(c, $event)"
               @touchstart="onCardTouchStart($event, c.id + g.key)"
               @touchmove="onCardTouchMove"
@@ -623,7 +646,7 @@ function clearAll() {
   top: 0;
   width: 118px;
   height: 168px;
-  transform: translate(var(--tx, 0), calc(var(--ty, 0) + var(--lift, 0px)));
+  transform: translate(calc(var(--tx, 0px) + var(--way, 0px)), calc(var(--ty, 0px) + var(--lift, 0px)));
   transition:
     transform 0.3s cubic-bezier(0.34, 1.8, 0.64, 1),
     opacity 0.2s ease;
