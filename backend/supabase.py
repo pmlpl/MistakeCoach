@@ -36,11 +36,13 @@ def verify_token(authorization: str | None) -> dict | None:
         _jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True)
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
-        # 新版 Supabase 项目默认 ES256 签名（旧项目是 RS256）——JWKS 会给出每个 kid 的正确算法
+        # 新版 Supabase 项目默认 ES256 签名（旧项目是 RS256）——JWKS 会给出每个 kid 的正确算法；
+        # audience 固定 "authenticated"（Supabase access token 的 aud 值，官方推荐校验）
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["ES256", "RS256"],
+            audience="authenticated",
             options={"require": ["exp", "sub"]},
         )
         return payload
