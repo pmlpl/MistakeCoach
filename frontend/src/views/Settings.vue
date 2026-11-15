@@ -5,8 +5,47 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { PROVIDERS, clearKeys, getKeys, modelConfig, saveKeys } from '../store/keys'
+import { signIn, signOut, signUp, useAuth } from '../store/auth'
 
 const router = useRouter()
+
+// 账号（Supabase Auth）：登录注册 + 云端同步入口；游客模式不受影响
+const { user, ready } = useAuth()
+const email = ref('')
+const password = ref('')
+const authBusy = ref(false)
+
+async function doLogin() {
+  if (!email.value || !password.value) return showToast('先填邮箱和密码')
+  authBusy.value = true
+  try {
+    await signIn(email.value.trim(), password.value)
+    showToast('登录成功')
+  } catch (e) {
+    showToast(e.message || '登录失败')
+  } finally {
+    authBusy.value = false
+  }
+}
+
+async function doSignUp() {
+  if (!email.value || !password.value) return showToast('先填邮箱和密码')
+  if (password.value.length < 6) return showToast('密码至少 6 位')
+  authBusy.value = true
+  try {
+    const { needsEmailConfirm } = await signUp(email.value.trim(), password.value)
+    showToast(needsEmailConfirm ? '确认邮件已发出，去邮箱点确认链接后回来登录' : '注册成功，已登录')
+  } catch (e) {
+    showToast(e.message || '注册失败')
+  } finally {
+    authBusy.value = false
+  }
+}
+
+async function doLogout() {
+  await signOut()
+  showToast('已退出登录')
+}
 
 // 公共 Key：选智谱/DeepSeek 预设时识别与对话复用这两把
 const zhipuKey = ref('')
@@ -72,6 +111,41 @@ function clear() {
           Key 与模型配置只保存在你设备的浏览器里（localStorage），仅随请求使用，不会被存储到服务器。
         </p>
       </div>
+
+      <!-- 账号（云端同步）：登录后错题本页多出「同步云端」；不登录应用行为不变 -->
+      <p class="section-title">账号（云端同步）</p>
+      <van-cell-group inset class="fields auth-box">
+        <template v-if="user">
+          <div class="auth-info">
+            <span class="auth-email">{{ user.email }}</span>
+            <span class="auth-tip">已登录——到错题本页可一键同步到云端</span>
+          </div>
+          <van-button size="small" plain block @click="doLogout">退出登录</van-button>
+        </template>
+        <template v-else-if="ready">
+          <van-field
+            v-model="email"
+            label="邮箱"
+            type="email"
+            placeholder="you@example.com"
+            clearable
+          />
+          <van-field
+            v-model="password"
+            label="密码"
+            type="password"
+            placeholder="至少 6 位"
+            clearable
+          />
+          <div class="auth-actions">
+            <van-button type="primary" size="small" :loading="authBusy" @click="doLogin">登录</van-button>
+            <van-button size="small" plain :loading="authBusy" @click="doSignUp">注册新账号</van-button>
+          </div>
+          <div class="shared-tip">
+            登录后错题卡可同步到云端（Supabase 托管，数据按账号隔离）；不登录也完全可以使用，数据只存本机。
+          </div>
+        </template>
+      </van-cell-group>
 
       <!-- 公共 Key：智谱 / DeepSeek 预设复用这两把 -->
       <p class="section-title">公共 Key</p>
@@ -261,6 +335,37 @@ function clear() {
   padding: 8px 16px 12px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.auth-box {
+  padding: 12px 16px 8px;
+}
+
+.auth-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.auth-email {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.auth-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.auth-actions {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0 4px;
+}
+
+.auth-actions .van-button {
+  flex: 1;
 }
 
 .actions {

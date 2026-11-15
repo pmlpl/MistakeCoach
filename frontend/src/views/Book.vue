@@ -5,10 +5,16 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
+import { syncCards } from '../api'
 import { listDrafts } from '../store/chat'
+import { useAuth } from '../store/auth'
 import { renderMixed } from '../utils/render'
 
 const router = useRouter()
+
+// 云端同步（登录用户）：未登录（游客模式）该功能不可见，应用行为与此前一致
+const { user } = useAuth()
+const syncing = ref(false)
 
 const cards = ref([])
 const ongoing = ref([]) // 进行中的对话（尚未生成错题卡的会话桶）：最近更新在前，最多展示 3 条
@@ -178,6 +184,34 @@ function dateOf(card) {
   return (card.created_at || '').slice(0, 10)
 }
 
+// 云端同步：本地全量上传（云端按卡 id 幂等 upsert），云端有而本地没有的合并回来。
+// 合并语义（非镜像）：本地删除不传播——两台设备场景下镜像会误删还没同步过的卡
+async function doSync() {
+  if (syncing.value || !user.value) return
+  syncing.value = true
+  try {
+    const local = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+    const remote = await syncCards(local)
+    const have = new Set(local.map((c) => c.id))
+    let added = 0
+    for (const c of remote) {
+      if (c?.id && !have.has(c.id)) {
+        local.push(c)
+        added++
+      }
+    }
+    if (added) {
+      localStorage.setItem('mc_cards', JSON.stringify(local))
+      load()
+    }
+    showToast(`同步完成：本机 ${local.length} 张，从云端补回 ${added} 张`)
+  } catch (e) {
+    showToast(e.message || '同步失败，请稍后再试')
+  } finally {
+    syncing.value = false
+  }
+}
+
 function clearAll() {
   showConfirmDialog({
     title: '清空错题本',
@@ -224,6 +258,16 @@ function clearAll() {
             <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">表格</button>
             <button :class="{ active: viewMode === 'pile' }" @click="viewMode = 'pile'">牌堆</button>
           </div>
+          <van-button
+            v-if="user && cards.length"
+            size="small"
+            round
+            plain
+            class="sync-btn"
+            :loading="syncing"
+            loading-text="同步中…"
+            @click="doSync"
+          >同步云端</van-button>
           <button v-if="cards.length" class="mini-btn danger" @click="clearAll">清空</button>
         </div>
       </div>
@@ -412,6 +456,16 @@ function clearAll() {
 .mini-btn.danger {
   color: var(--wrong);
   border-color: rgba(220, 38, 38, 0.35);
+}
+
+/* 同步云端按钮：与 mini-btn 视觉对齐（小圆角胶囊、同字号） */
+.sync-btn {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
 
 .seg {

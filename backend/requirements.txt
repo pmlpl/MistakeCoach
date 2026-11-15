@@ -3,3 +3,4 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 httpx
+pyjwt[crypto]>=2.8   # Supabase JWT 验签（JWKS/RS256）

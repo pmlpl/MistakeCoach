@@ -1,4 +1,5 @@
 import { getKeys, modelConfig } from './store/keys'
+import { accessToken } from './store/auth'
 
 /** 统一请求封装：非 2xx 时把后端 detail 变成可读错误抛出 */
 async function request(path, options) {
@@ -62,6 +63,24 @@ export function noteGenerate(questionText, studentWork, transcript) {
       chat: bits.chat,
     }),
   })
+}
+
+/** 云端同步错题卡（6.4，登录用户）：本地全量上传 upsert，返回云端全量。
+ *  合并语义：调用方只把「云端有而本地没有」的卡并入本地；本地删除不传播（防误删） */
+export async function syncCards(localCards) {
+  const token = await accessToken()
+  if (!token) throw new Error('请先登录')
+  const res = await fetch('/api/cards/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ cards: localCards }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = typeof data.detail === 'string' ? data.detail : `请求失败（${res.status}）`
+    throw new Error(msg)
+  }
+  return data.cards || []
 }
 
 /** POST /api/chat：SSE 流式对话（6.2）。onDelta 逐字回调；onState 收回复末尾的状态事件。

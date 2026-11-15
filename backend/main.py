@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()  # 读取 backend/.env 中的 API Key
 
-from routers import chat, note, recognize
+from routers import cards, chat, note, recognize
 
 app = FastAPI(title="MistakeCoach API")
 
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(recognize.router)
 app.include_router(chat.router)
 app.include_router(note.router)
+app.include_router(cards.router)
 
 
 @app.get("/api/health")
