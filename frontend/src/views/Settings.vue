@@ -13,6 +13,7 @@ const router = useRouter()
 const { user, ready } = useAuth()
 const email = ref('')
 const password = ref('')
+const showPwd = ref(false) // 密码可见切换：手机排查登录问题时看一眼输没输对
 const authBusy = ref(false)
 
 async function doLogin() {
@@ -134,10 +135,12 @@ function clear() {
           />
           <van-field
             v-model="password"
+            :type="showPwd ? 'text' : 'password'"
             label="密码"
-            type="password"
             placeholder="至少 6 位"
             clearable
+            :right-icon="showPwd ? 'eye-o' : 'closed-eye'"
+            @click-right-icon="showPwd = !showPwd"
           />
           <div class="auth-actions">
             <van-button type="primary" size="small" :loading="authBusy" @click="doLogin">登录</van-button>
