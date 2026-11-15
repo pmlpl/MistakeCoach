@@ -101,11 +101,15 @@ function toggleSpread(key) {
   drawnId.value = ''
 }
 // 两段式（3.3）：牌堆收拢时点牌=先推开；已推开后点牌=完全抽出（居中浮层）
-// 抽出时记下被点牌的位置与左右邻牌：FLIP 的飞入起点 / 放回时的飞回终点与让位对象
+// 抽出时记下被点牌的位置与左右邻牌：FLIP 的飞入起点 / 放回时的飞回终点与让位对象。
+// landingId：放回落定前维持原位牌隐藏——否则浮层卡还在飞行途中，牌堆里那张已经淡入，
+// 看起来像提前"镶入"了
 const flyFrom = ref(null)
 const flyPrevId = ref('')
 const flyNextId = ref('')
+const landingId = ref('')
 function drawCard(card, e) {
+  landingId.value = ''
   const g = groups.value.find((g) => g.visible.some((c) => c.id === card.id))
   const key = g?.key ?? ''
   if (spreadKey.value !== key) {
@@ -148,6 +152,7 @@ function onOverlayEnter(el) {
 function onOverlayLeave(el, done) {
   const to = flyFrom.value
   if (!to || reducedMotion) {
+    landingId.value = ''
     done()
     return
   }
@@ -168,14 +173,22 @@ function onOverlayLeave(el, done) {
     ],
     { duration: 440, easing: 'ease-in' },
   )
+  // 原位牌等浮层卡接近落定（动画末段，300ms 起）才开始 0.2s 淡入：
+  // 落定前牌堆缝隙保持空着，落定后原牌与邻牌回弹一起把它"夹住"
+  const revealTimer = setTimeout(() => {
+    landingId.value = ''
+  }, 300)
   anim.onfinish = () => {
+    clearTimeout(revealTimer)
     done()
-    // 牌已塞回缝隙：清让位 → 左右邻牌回弹合拢，原位牌淡入，一起把它"夹住"
+    landingId.value = ''
     flyPrevId.value = ''
     flyNextId.value = ''
   }
   anim.oncancel = () => {
+    clearTimeout(revealTimer)
     done()
+    landingId.value = ''
     flyPrevId.value = ''
     flyNextId.value = ''
   }
@@ -183,9 +196,11 @@ function onOverlayLeave(el, done) {
 
 // 只收回浮层中的卡，牌堆保持推开态（方便继续浏览其他牌）
 function closeOverlay() {
+  if (drawnId.value) landingId.value = drawnId.value
   drawnId.value = ''
 }
 function onBackdrop() {
+  if (drawnId.value) landingId.value = drawnId.value
   spreadKey.value = ''
   drawnId.value = ''
   expandedKey.value = ''
@@ -376,7 +391,7 @@ function clearAll() {
               v-for="(c, idx) in g.visible"
               :key="c.id + g.key"
               class="pcard-wrap"
-              :class="{ peek: pressedKey === c.id + g.key, drawn: drawnId === c.id }"
+              :class="{ peek: pressedKey === c.id + g.key, drawn: drawnId === c.id || landingId === c.id }"
               :data-peek-key="c.id + g.key"
               :style="wrapStyle(g, idx, c.id)"
               @click.stop="drawCard(c, $event)"
