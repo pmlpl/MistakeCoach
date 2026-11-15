@@ -19,7 +19,8 @@ async function doLogin() {
   if (!email.value || !password.value) return showToast('先填邮箱和密码')
   authBusy.value = true
   try {
-    await signIn(email.value.trim(), password.value)
+    // trim 首尾空格：手机输入法常在输入框尾部残留空格，导致 invalid credentials
+    await signIn(email.value.trim(), password.value.trim())
     showToast('登录成功')
   } catch (e) {
     showToast(e.message || '登录失败')
@@ -30,10 +31,11 @@ async function doLogin() {
 
 async function doSignUp() {
   if (!email.value || !password.value) return showToast('先填邮箱和密码')
-  if (password.value.length < 6) return showToast('密码至少 6 位')
+  const pwd = password.value.trim()
+  if (pwd.length < 6) return showToast('密码至少 6 位')
   authBusy.value = true
   try {
-    const { needsEmailConfirm } = await signUp(email.value.trim(), password.value)
+    const { needsEmailConfirm } = await signUp(email.value.trim(), pwd)
     showToast(needsEmailConfirm ? '确认邮件已发出，去邮箱点确认链接后回来登录' : '注册成功，已登录')
   } catch (e) {
     showToast(e.message || '注册失败')
