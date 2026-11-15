@@ -101,7 +101,9 @@ function toggleSpread(key) {
   drawnId.value = ''
 }
 // 两段式（3.3）：牌堆收拢时点牌=先推开；已推开后点牌=完全抽出（居中浮层）
-function drawCard(card) {
+// 抽出时记下被点牌的位置：FLIP 过渡的飞入起点 / 放回时的飞回终点
+const flyFrom = ref(null)
+function drawCard(card, e) {
   const g = groups.value.find((g) => g.visible.some((c) => c.id === card.id))
   const key = g?.key ?? ''
   if (spreadKey.value !== key) {
@@ -109,7 +111,54 @@ function drawCard(card) {
     drawnId.value = ''
     return
   }
+  flyFrom.value = e.currentTarget.getBoundingClientRect()
   drawnId.value = card.id
+}
+
+// FLIP 过渡（JS hooks，:css=false）：抽出=从牌堆那张牌的位置飞入中央；放回=飞回原位缩小淡出
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+function onOverlayEnter(el) {
+  const from = flyFrom.value
+  if (!from || reducedMotion) {
+    el.style.opacity = '0'
+    requestAnimationFrame(() => {
+      el.style.transition = 'opacity 0.15s ease'
+      el.style.opacity = ''
+    })
+    return
+  }
+  const to = el.getBoundingClientRect()
+  const dx = from.left + from.width / 2 - (to.left + to.width / 2)
+  const dy = from.top + from.height / 2 - (to.top + to.height / 2)
+  el.style.transition = 'none'
+  el.style.transform = `translate(${dx}px, ${dy}px) scale(${from.width / to.width})`
+  requestAnimationFrame(() => {
+    el.style.transition = 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)'
+    el.style.transform = ''
+  })
+}
+
+function onOverlayLeave(el, done) {
+  const to = flyFrom.value
+  if (!to || reducedMotion) {
+    done()
+    return
+  }
+  const from = el.getBoundingClientRect()
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2)
+  const dy = to.top + to.height / 2 - (from.top + from.height / 2)
+  el.style.transition = 'transform 0.28s cubic-bezier(0.4, 0, 0.7, 0.2), opacity 0.28s ease'
+  el.style.transform = `translate(${dx}px, ${dy}px) scale(${to.width / from.width})`
+  el.style.opacity = '0'
+  const timer = setTimeout(done, 350) // transitionend 兜底（属性中断时不触发）
+  el.addEventListener(
+    'transitionend',
+    () => {
+      clearTimeout(timer)
+      done()
+    },
+    { once: true },
+  )
 }
 // 只收回浮层中的卡，牌堆保持推开态（方便继续浏览其他牌）
 function closeOverlay() {
@@ -137,7 +186,8 @@ function goCard(card) {
 function wrapStyle(group, idx) {
   const n = group.visible.length
   if (!spreadKey.value || spreadKey.value !== group.key) {
-    return { '--tx': `${idx * 4}px`, '--ty': `${idx * -3}px`, '--delay': '0ms', zIndex: idx + 1 }
+    // 收拢也级联（顶牌先回）：收回与推开对称，都有逐张归位动画
+    return { '--tx': `${idx * 4}px`, '--ty': `${idx * -3}px`, '--delay': `${(n - 1 - idx) * 18}ms`, zIndex: idx + 1 }
   }
   const cardW = isDesktop.value ? 150 : 118
   const pileW = Math.min(760, window.innerWidth - 48)
@@ -296,10 +346,10 @@ function clearAll() {
               v-for="(c, idx) in g.visible"
               :key="c.id + g.key"
               class="pcard-wrap"
-              :class="{ peek: pressedKey === c.id + g.key }"
+              :class="{ peek: pressedKey === c.id + g.key, drawn: drawnId === c.id }"
               :data-peek-key="c.id + g.key"
               :style="wrapStyle(g, idx)"
-              @click.stop="drawCard(c)"
+              @click.stop="drawCard(c, $event)"
               @touchstart="onCardTouchStart($event, c.id + g.key)"
               @touchmove="onCardTouchMove"
               @touchend="onCardTouchEnd"
@@ -347,36 +397,39 @@ function clearAll() {
       </div>
     </div>
 
-    <!-- 完全抽出：居中放大浮层（3.3）；点空白只收回卡，牌堆保持推开 -->
-    <div v-if="drawnCard" class="overlay" @click="closeOverlay">
-      <div class="overlay-card" @click.stop>
-        <header class="card-head">
-          <div class="pills">
-            <span class="pill">{{ drawnCard.subject }}</span>
-            <span v-for="k in drawnCard.knowledge_points" :key="k" class="pill soft">{{ k }}</span>
-            <span class="pill reason">{{ drawnCard.wrong_reason?.category }}</span>
+    <!-- 完全抽出：居中放大浮层（3.3）；点空白只收回卡，牌堆保持推开。
+         抽出/放回 FLIP 过渡（JS hooks）：从被点牌的真实位置飞入中央、放回飞回原位 -->
+    <transition :css="false" @enter="onOverlayEnter" @leave="onOverlayLeave">
+      <div v-if="drawnCard" class="overlay" @click="closeOverlay">
+        <div class="overlay-card" @click.stop>
+          <header class="card-head">
+            <div class="pills">
+              <span class="pill">{{ drawnCard.subject }}</span>
+              <span v-for="k in drawnCard.knowledge_points" :key="k" class="pill soft">{{ k }}</span>
+              <span class="pill reason">{{ drawnCard.wrong_reason?.category }}</span>
+            </div>
+            <span class="date">{{ dateOf(drawnCard) }}</span>
+          </header>
+          <div class="ov-question" v-html="drawnQuestionHtml"></div>
+          <div v-if="drawnCard.final_answer" class="ov-final">
+            <span class="ov-label">答案</span>
+            <span class="ov-final-body" v-html="drawnFinalHtml"></span>
           </div>
-          <span class="date">{{ dateOf(drawnCard) }}</span>
-        </header>
-        <div class="ov-question" v-html="drawnQuestionHtml"></div>
-        <div v-if="drawnCard.final_answer" class="ov-final">
-          <span class="ov-label">答案</span>
-          <span class="ov-final-body" v-html="drawnFinalHtml"></span>
-        </div>
-        <div class="ov-actions">
-          <van-button
-            v-if="cardHasChat(drawnCard)"
-            type="primary"
-            size="small"
-            round
-            plain
-            @click="goChatCard(drawnCard)"
-          >继续这题的对话</van-button>
-          <van-button type="primary" size="small" round @click="goCard(drawnCard)">查看完整错题卡</van-button>
-          <van-button size="small" round plain @click="closeOverlay">放回牌堆</van-button>
+          <div class="ov-actions">
+            <van-button
+              v-if="cardHasChat(drawnCard)"
+              type="primary"
+              size="small"
+              round
+              plain
+              @click="goChatCard(drawnCard)"
+            >继续这题的对话</van-button>
+            <van-button type="primary" size="small" round @click="goCard(drawnCard)">查看完整错题卡</van-button>
+            <van-button size="small" round plain @click="closeOverlay">放回牌堆</van-button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
   </div>
 </template>
 
@@ -564,9 +617,16 @@ function clearAll() {
   width: 118px;
   height: 168px;
   transform: translate(var(--tx, 0), calc(var(--ty, 0) + var(--lift, 0px)));
-  transition: transform 0.3s cubic-bezier(0.34, 1.8, 0.64, 1);
-  transition-delay: var(--delay, 0ms);
+  transition:
+    transform 0.3s cubic-bezier(0.34, 1.8, 0.64, 1),
+    opacity 0.2s ease;
+  transition-delay: var(--delay, 0ms), 0ms;
   cursor: pointer;
+}
+
+/* 抽出到浮层期间藏起原位牌（FLIP 飞入的"起点"就是它），放回时淡入归位 */
+.pcard-wrap.drawn {
+  opacity: 0;
 }
 
 @media (min-width: 768px) {
@@ -756,8 +816,10 @@ function clearAll() {
   padding: 20px;
 }
 
+/* 竖版 3:4，与牌堆里的牌等比例（宽 118×168 / 150×200 ≈ 3:4）——抽出是"同一张牌放大" */
 .overlay-card {
-  width: min(560px, 92vw);
+  width: min(360px, 86vw);
+  aspect-ratio: 3 / 4;
   max-height: 82vh;
   overflow-y: auto;
   background: #fffdf6;
@@ -765,24 +827,6 @@ function clearAll() {
   border-radius: var(--radius);
   padding: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  animation: card-pop 0.16s ease-out;
-}
-
-@keyframes card-pop {
-  from {
-    transform: scale(0.92);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .overlay-card {
-    animation: none;
-  }
 }
 
 .card-head {
@@ -842,7 +886,15 @@ function clearAll() {
 
 .ov-actions {
   display: flex;
-  flex-wrap: wrap; /* 三个按钮时手机窄屏自动换行 */
-  gap: 10px;
+  flex-direction: column; /* 竖版卡：按钮纵排全宽 */
+  gap: 8px;
+}
+
+.ov-actions :deep(.van-button) {
+  width: 100%;
+}
+
+.ov-actions :deep(.van-button + .van-button) {
+  margin-left: 0; /* Vant 相邻按钮默认 margin-left，纵排下去掉 */
 }
 </style>
