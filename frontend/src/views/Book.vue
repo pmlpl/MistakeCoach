@@ -129,13 +129,13 @@ function onOverlayEnter(el) {
     [
       { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
       {
-        transform: `translate(${dx}px, ${dy - 36}px) scale(${s * 1.06})`,
-        offset: 0.32,
-        easing: 'cubic-bezier(0.3, 0, 0.7, 0.4)',
+        transform: `translate(${dx}px, ${dy - 56}px) scale(${s * 1.08})`,
+        offset: 0.4,
+        easing: 'cubic-bezier(0.45, 0, 0.55, 1)',
       },
       { transform: 'none' },
     ],
-    { duration: 420, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    { duration: 680, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
   )
 }
 
@@ -153,13 +153,13 @@ function onOverlayLeave(el, done) {
     [
       { transform: 'none' },
       {
-        transform: `translate(${dx}px, ${dy - 36}px) scale(${s * 1.06})`,
+        transform: `translate(${dx}px, ${dy - 56}px) scale(${s * 1.08})`,
         offset: 0.68,
-        easing: 'cubic-bezier(0.3, 0, 0.7, 0.4)',
+        easing: 'cubic-bezier(0.45, 0, 0.55, 1)',
       },
       { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 1 },
     ],
-    { duration: 340, easing: 'ease-in' },
+    { duration: 440, easing: 'ease-in' },
   )
   anim.onfinish = done
   anim.oncancel = done
