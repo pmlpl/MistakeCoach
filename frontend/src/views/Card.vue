@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { closeToast, showLoadingToast, showToast } from 'vant'
 import html2canvas from 'html2canvas'
+import { loadCards } from '../api'
 import { renderMixed } from '../utils/render'
 import { session } from '../store/session'
 import { listDrafts } from '../store/chat'
@@ -16,7 +17,7 @@ const saved = ref(false)
 
 onMounted(() => {
   const id = route.params.id
-  const cards = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+  const cards = loadCards()
   const found = cards.find((c) => c.id === id)
   if (found) {
     card.value = found
@@ -72,7 +73,7 @@ async function exportPng() {
 // 存入错题本（FR-9）：写入 localStorage，之后可从错题本随时回看
 function saveToBook() {
   if (!card.value || saved.value) return
-  const cards = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+  const cards = loadCards()
   cards.unshift(card.value)
   localStorage.setItem('mc_cards', JSON.stringify(cards))
   saved.value = true

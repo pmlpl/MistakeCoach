@@ -1,4 +1,5 @@
 """MistakeCoach 后端入口：FastAPI + CORS + 静态托管"""
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -7,6 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()  # 读取 backend/.env 中的 API Key
+
+# 统一日志配置（Render 等平台会把 stdout/stderr 收集进日志面板）——
+# 所有模块用 logging.getLogger(__name__) 就会走这个格式，异常不再静默
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 from routers import cards, chat, note, recognize
 

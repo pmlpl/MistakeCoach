@@ -12,7 +12,7 @@ from fastapi import HTTPException, Request
 # vision/chat 为该家默认模型名；env_* 为服务端默认值覆盖（请求未显式指定模型时生效）
 PROVIDERS = {
     "zhipu": {
-        "label": "智谱 GLM",
+        "label": "智谱 GLM·免费",
         "base": "https://open.bigmodel.cn/api/paas/v4",
         "vision_model": "glm-4v-flash",
         "chat_model": "glm-4.7-flash",

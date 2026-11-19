@@ -5,7 +5,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
-import { syncCards } from '../api'
+import { syncCards, loadCards } from '../api'
 import { listDrafts } from '../store/chat'
 import { useAuth } from '../store/auth'
 import { renderMixed } from '../utils/render'
@@ -35,7 +35,7 @@ function onResize() {
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
 function load() {
-  cards.value = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+  cards.value = loadCards()
   const drafts = listDrafts()
   draftSids.value = new Set(drafts.map((d) => d.sid))
   // 已生成错题卡的会话从"进行中"隐藏——它的入口在卡片浮层的「继续这题的对话」，避免两个入口指向同一题
@@ -282,7 +282,7 @@ async function doSync(silent = false) {
   if (syncing.value || !user.value) return
   syncing.value = true
   try {
-    const local = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+    const local = loadCards()
     const remote = await syncCards(local)
     const have = new Set(local.map((c) => c.id))
     let added = 0

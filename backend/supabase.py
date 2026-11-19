@@ -26,6 +26,9 @@ def verify_token(authorization: str | None) -> dict | None:
 
     RS256 验签公钥从 Supabase JWKS 端点动态获取并缓存；通过返回 payload（sub = 用户 id），
     无效/过期/未登录返回 None。"""
+    import logging
+    _log = logging.getLogger(__name__)
+
     global _jwks_client
     if not enabled() or not authorization or not authorization.startswith("Bearer "):
         return None
@@ -46,7 +49,8 @@ def verify_token(authorization: str | None) -> dict | None:
             options={"require": ["exp", "sub"]},
         )
         return payload
-    except Exception:
+    except Exception as e:
+        _log.info("JWT verify failed: %s", e)  # 401 排查第一入口：Render 日志直接能看到原因
         return None
 
 

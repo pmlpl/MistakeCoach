@@ -1,6 +1,22 @@
 import { getKeys, modelConfig } from './store/keys'
 import { accessToken } from './store/auth'
 
+/** 错题本 localStorage 读：JSON.parse 损坏不白屏——清掉坏数据并回空数组，
+ *  让用户至少能打开错题本重新存卡。所有读 mc_cards 的地方都走这里 */
+const CARDS_KEY = 'mc_cards'
+export function loadCards() {
+  try {
+    const raw = localStorage.getItem(CARDS_KEY)
+    if (!raw) return []
+    const cards = JSON.parse(raw)
+    return Array.isArray(cards) ? cards : []
+  } catch {
+    // JSON 损坏（浏览器突然崩、手机断电刚好在写）：清掉让应用能自救
+    localStorage.removeItem(CARDS_KEY)
+    return []
+  }
+}
+
 /** 统一请求封装：非 2xx 时把后端 detail 变成可读错误抛出 */
 async function request(path, options) {
   const res = await fetch(path, options)

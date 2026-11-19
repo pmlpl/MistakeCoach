@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { loadCards } from '../api'
 import { session } from '../store/session'
 import { loadDraft } from '../store/chat'
 import ShootView from '../views/Shoot.vue'
@@ -31,7 +32,7 @@ router.beforeEach((to) => {
   if (to.name === 'chat' && !session.verified && !loadDraft(to.query.sid)) return { name: 'shoot' }
   // /card/:id：错题本查有此卡，或是刚生成待保存的新卡（M3）
   if (to.name === 'card') {
-    const cards = JSON.parse(localStorage.getItem('mc_cards') || '[]')
+    const cards = loadCards()
     const known = cards.some((c) => c.id === to.params.id) || session.pendingCard?.id === to.params.id
     if (!known) return { name: 'book' }
   }
